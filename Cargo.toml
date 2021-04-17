@@ -1,0 +1,7 @@
+[workspace]
+members = [
+  "oscrc",
+  "obsctl",
+  "open-build-service-api",
+  "open-build-service-mock"
+]
