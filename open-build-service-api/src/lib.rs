@@ -4,12 +4,12 @@ use futures::prelude::*;
 use futures::ready;
 use futures::stream::BoxStream;
 use quick_xml::de::DeError;
+use reqwest::{RequestBuilder, Response};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use thiserror::Error;
 use url::Url;
-use reqwest::{RequestBuilder, Response};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -226,7 +226,6 @@ impl<'a> PackageLogStream<'a> {
             .append_pair("start", &format!("{}", offset));
         Ok(url)
     }
-
 }
 
 impl Stream for PackageLogStream<'_> {
@@ -298,7 +297,6 @@ impl PackageLog<'_> {
 
     pub fn stream(&self, offset: usize) -> Result<PackageLogStream> {
         let u = self.request()?;
-        println!("Requesting: {:?}", u);
         Ok(PackageLogStream::new(self.client, offset, u))
     }
 
@@ -435,8 +433,7 @@ impl Client {
     }
 
     fn get(&self, url: Url) -> RequestBuilder {
-        self
-            .client
+        self.client
             .get(url)
             .basic_auth(&self.user, Some(&self.pass))
     }
@@ -446,23 +443,24 @@ impl Client {
 
         match response.error_for_status_ref() {
             Ok(_) => Ok(response),
-            Err(e) => if let Some(status) = e.status() {
-                if status.is_client_error() {
-                    let data = response.text() .await?;
-                    let error = quick_xml::de::from_str(&data)?;
-                    Err(Error::ApiError(error))
+            Err(e) => {
+                if let Some(status) = e.status() {
+                    if status.is_client_error() {
+                        let data = response.text().await?;
+                        let error = quick_xml::de::from_str(&data)?;
+                        Err(Error::ApiError(error))
+                    } else {
+                        Err(e.into())
+                    }
                 } else {
                     Err(e.into())
                 }
-            } else {
-                Err(e.into())
             }
-
         }
     }
 
     async fn request<T: DeserializeOwned + std::fmt::Debug>(&self, url: Url) -> Result<T> {
         let data = Self::send_with_error(self.get(url)).await?.text().await?;
-        quick_xml::de::from_str(&data).map_err( | e | e.into() )
+        quick_xml::de::from_str(&data).map_err(|e| e.into())
     }
 }
