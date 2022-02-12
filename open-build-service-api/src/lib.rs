@@ -168,12 +168,12 @@ pub struct ResultListResult {
     #[serde(default)]
     pub dirty: bool,
     #[serde(rename = "status")]
-    pub statusses: Vec<BuildStatus>,
+    pub statuses: Vec<BuildStatus>,
 }
 
 impl ResultListResult {
     pub fn get_status(&self, package: &str) -> Option<&BuildStatus> {
-        self.statusses.iter().find(|s| s.package == package)
+        self.statuses.iter().find(|s| s.package == package)
     }
 }
 
