@@ -138,6 +138,15 @@ pub struct BuildHistory {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct LinkInfo {
+    pub project: String,
+    pub package: String,
+    pub srcmd5: String,
+    pub xsrcmd5: String,
+    pub lsrcmd5: String,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct DirectoryEntry {
     pub name: String,
     pub size: u64,
@@ -157,6 +166,8 @@ pub struct Directory {
     pub srcmd5: String,
     #[serde(rename = "entry")]
     pub entries: Vec<DirectoryEntry>,
+    #[serde(default, rename = "linkinfo")]
+    pub linkinfo: Vec<LinkInfo>,
 }
 
 #[derive(Deserialize, Debug)]
