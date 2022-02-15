@@ -178,7 +178,7 @@ pub struct ResultListResult {
     pub code: RepositoryCode,
     #[serde(default)]
     pub dirty: bool,
-    #[serde(rename = "status")]
+    #[serde(default, rename = "status")]
     pub statuses: Vec<BuildStatus>,
 }
 
