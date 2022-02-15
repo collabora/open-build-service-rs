@@ -292,7 +292,7 @@ pub struct PackageLog<'a> {
     arch: String,
 }
 
-impl PackageLog<'_> {
+impl<'a> PackageLog<'a> {
     fn request(&self) -> Result<Url> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
@@ -306,7 +306,7 @@ impl PackageLog<'_> {
         Ok(u)
     }
 
-    pub fn stream(&self, offset: usize) -> Result<PackageLogStream> {
+    pub fn stream(&self, offset: usize) -> Result<PackageLogStream<'a>> {
         let u = self.request()?;
         Ok(PackageLogStream::new(self.client, offset, u))
     }
@@ -332,7 +332,7 @@ pub struct PackageBuilder<'a> {
     pub package: String,
 }
 
-impl PackageBuilder<'_> {
+impl<'a> PackageBuilder<'a> {
     fn full_request(&self, repository: &str, arch: &str, command: &str) -> Result<Url> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
@@ -361,7 +361,7 @@ impl PackageBuilder<'_> {
         self.client.request(u).await
     }
 
-    pub fn log(&self, repository: &str, arch: &str) -> PackageLog<'_> {
+    pub fn log(&self, repository: &str, arch: &str) -> PackageLog<'a> {
         PackageLog {
             client: self.client,
             project: self.project.clone(),
