@@ -87,7 +87,7 @@ impl PackageCode {
     pub fn is_final(&self) -> bool {
         matches!(
             self,
-            Self::Disabled | Self::Succeeded | Self::Failed | Self::Excluded
+            Self::Broken | Self::Disabled | Self::Excluded | Self::Failed | Self::Succeeded
         )
     }
 }
