@@ -2,9 +2,9 @@ use anyhow::{Context, Result};
 use futures::prelude::*;
 use open_build_service_api::{Client, PackageLogStreamOptions};
 use oscrc::Oscrc;
-use tokio::io::AsyncWriteExt;
 use std::path::PathBuf;
 use structopt::StructOpt;
+use tokio::io::AsyncWriteExt;
 use url::Url;
 
 #[derive(StructOpt, Debug)]
