@@ -64,7 +64,7 @@ async fn log(client: Client, opts: PackageFull) -> Result<()> {
 
 async fn list(client: Client, opts: Package) -> Result<()> {
     let p = client.project(opts.project).package(opts.package);
-    println!("{:#?}", p.list().await);
+    println!("{:#?}", p.list(None).await);
     Ok(())
 }
 

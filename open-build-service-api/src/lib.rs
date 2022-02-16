@@ -371,13 +371,18 @@ impl<'a> PackageBuilder<'a> {
         }
     }
 
-    pub async fn list(&self) -> Result<Directory> {
+    pub async fn list(&self, rev: Option<&str>) -> Result<Directory> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
             .map_err(|_| Error::InvalidUrl)?
             .push("source")
             .push(&self.project)
             .push(&self.package);
+
+        if let Some(rev) = rev {
+            u.query_pairs_mut().append_pair("rev", rev);
+        }
+
         self.client.request(u).await
     }
 
