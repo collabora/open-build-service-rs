@@ -196,6 +196,17 @@ pub struct ResultList {
 }
 
 #[derive(Deserialize, Debug)]
+struct RepoDirectoryEntry {
+    pub name: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct RepoDirectory {
+    #[serde(rename = "entry")]
+    pub entries: Vec<RepoDirectoryEntry>,
+}
+
+#[derive(Deserialize, Debug)]
 struct LogEntryEntry {
     size: usize,
     mtime: u64,
@@ -431,6 +442,39 @@ impl<'a> ProjectBuilder<'a> {
             .push(&self.project)
             .push("_result");
         self.client.request(u).await
+    }
+
+    pub async fn repositories(&self) -> Result<Vec<String>> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("build")
+            .push(&self.project);
+        Ok(self
+            .client
+            .request::<RepoDirectory>(u)
+            .await?
+            .entries
+            .into_iter()
+            .map(|e| e.name)
+            .collect())
+    }
+
+    pub async fn arches(&self, repository: &str) -> Result<Vec<String>> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("build")
+            .push(&self.project)
+            .push(repository);
+        Ok(self
+            .client
+            .request::<RepoDirectory>(u)
+            .await?
+            .entries
+            .into_iter()
+            .map(|e| e.name)
+            .collect())
     }
 }
 
