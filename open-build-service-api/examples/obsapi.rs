@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use futures::prelude::*;
-use open_build_service_api::Client;
+use open_build_service_api::{Client, PackageLogStreamOptions};
 use oscrc::Oscrc;
 use tokio::io::AsyncWriteExt;
 use std::path::PathBuf;
@@ -54,7 +54,7 @@ async fn log(client: Client, opts: PackageFull) -> Result<()> {
 
     let mut stdout = tokio::io::stdout();
 
-    let mut stream = log.stream(0)?;
+    let mut stream = log.stream(PackageLogStreamOptions::default())?;
     while let Some(chunk) = stream.try_next().await? {
         stdout.write_all(&chunk).await?;
     }

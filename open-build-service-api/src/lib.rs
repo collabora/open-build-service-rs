@@ -213,19 +213,27 @@ enum PackageLogRequest {
     Stream((BoxStream<'static, reqwest::Result<Bytes>>, bool)),
 }
 
+#[derive(Default)]
+pub struct PackageLogStreamOptions {
+    pub offset: Option<usize>,
+    pub end: Option<usize>,
+}
+
 pub struct PackageLogStream<'a> {
     client: &'a Client,
     url: Url,
     offset: usize,
+    options: PackageLogStreamOptions,
     request: PackageLogRequest,
 }
 
 impl<'a> PackageLogStream<'a> {
-    fn new(client: &'a Client, offset: usize, url: Url) -> Self {
+    fn new(client: &'a Client, options: PackageLogStreamOptions, url: Url) -> Self {
         Self {
             client,
             url,
-            offset,
+            offset: options.offset.unwrap_or(0),
+            options,
             request: PackageLogRequest::Initial,
         }
     }
@@ -235,6 +243,9 @@ impl<'a> PackageLogStream<'a> {
         url.query_pairs_mut()
             .append_pair("nostream", "1")
             .append_pair("start", &format!("{}", offset));
+        if let Some(end) = self.options.end {
+            url.query_pairs_mut().append_pair("end", &end.to_string());
+        }
         Ok(url)
     }
 }
@@ -273,7 +284,7 @@ impl Stream for PackageLogStream<'_> {
                         None => {
                             let gotdata = *gotdata;
                             me.request = PackageLogRequest::Initial;
-                            if !gotdata {
+                            if !gotdata || matches!(me.options.end, Some(end) if me.offset >= end) {
                                 return Poll::Ready(None);
                             }
                         }
@@ -306,9 +317,9 @@ impl<'a> PackageLog<'a> {
         Ok(u)
     }
 
-    pub fn stream(&self, offset: usize) -> Result<PackageLogStream<'a>> {
+    pub fn stream(&self, options: PackageLogStreamOptions) -> Result<PackageLogStream<'a>> {
         let u = self.request()?;
-        Ok(PackageLogStream::new(self.client, offset, u))
+        Ok(PackageLogStream::new(self.client, options, u))
     }
 
     /// Returns size and mtime
