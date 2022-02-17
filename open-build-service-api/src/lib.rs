@@ -4,12 +4,12 @@ use futures::prelude::*;
 use futures::ready;
 use futures::stream::BoxStream;
 use quick_xml::de::DeError;
+use reqwest::{RequestBuilder, Response};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use thiserror::Error;
 use url::Url;
-use reqwest::{RequestBuilder, Response};
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -87,7 +87,7 @@ impl PackageCode {
     pub fn is_final(&self) -> bool {
         matches!(
             self,
-            Self::Disabled | Self::Succeeded | Self::Failed | Self::Excluded
+            Self::Broken | Self::Disabled | Self::Excluded | Self::Failed | Self::Succeeded
         )
     }
 }
@@ -138,6 +138,15 @@ pub struct BuildHistory {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct LinkInfo {
+    pub project: String,
+    pub package: String,
+    pub srcmd5: String,
+    pub xsrcmd5: String,
+    pub lsrcmd5: String,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct DirectoryEntry {
     pub name: String,
     pub size: u64,
@@ -157,6 +166,8 @@ pub struct Directory {
     pub srcmd5: String,
     #[serde(rename = "entry")]
     pub entries: Vec<DirectoryEntry>,
+    #[serde(default, rename = "linkinfo")]
+    pub linkinfo: Vec<LinkInfo>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -167,13 +178,13 @@ pub struct ResultListResult {
     pub code: RepositoryCode,
     #[serde(default)]
     pub dirty: bool,
-    #[serde(rename = "status")]
-    pub statusses: Vec<BuildStatus>,
+    #[serde(default, rename = "status")]
+    pub statuses: Vec<BuildStatus>,
 }
 
 impl ResultListResult {
     pub fn get_status(&self, package: &str) -> Option<&BuildStatus> {
-        self.statusses.iter().find(|s| s.package == package)
+        self.statuses.iter().find(|s| s.package == package)
     }
 }
 
@@ -182,6 +193,17 @@ pub struct ResultList {
     pub state: String,
     #[serde(rename = "result")]
     pub results: Vec<ResultListResult>,
+}
+
+#[derive(Deserialize, Debug)]
+struct RepoDirectoryEntry {
+    pub name: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct RepoDirectory {
+    #[serde(rename = "entry")]
+    pub entries: Vec<RepoDirectoryEntry>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -202,19 +224,27 @@ enum PackageLogRequest {
     Stream((BoxStream<'static, reqwest::Result<Bytes>>, bool)),
 }
 
+#[derive(Default)]
+pub struct PackageLogStreamOptions {
+    pub offset: Option<usize>,
+    pub end: Option<usize>,
+}
+
 pub struct PackageLogStream<'a> {
     client: &'a Client,
     url: Url,
     offset: usize,
+    options: PackageLogStreamOptions,
     request: PackageLogRequest,
 }
 
 impl<'a> PackageLogStream<'a> {
-    fn new(client: &'a Client, offset: usize, url: Url) -> Self {
+    fn new(client: &'a Client, options: PackageLogStreamOptions, url: Url) -> Self {
         Self {
             client,
             url,
-            offset,
+            offset: options.offset.unwrap_or(0),
+            options,
             request: PackageLogRequest::Initial,
         }
     }
@@ -224,9 +254,11 @@ impl<'a> PackageLogStream<'a> {
         url.query_pairs_mut()
             .append_pair("nostream", "1")
             .append_pair("start", &format!("{}", offset));
+        if let Some(end) = self.options.end {
+            url.query_pairs_mut().append_pair("end", &end.to_string());
+        }
         Ok(url)
     }
-
 }
 
 impl Stream for PackageLogStream<'_> {
@@ -263,7 +295,7 @@ impl Stream for PackageLogStream<'_> {
                         None => {
                             let gotdata = *gotdata;
                             me.request = PackageLogRequest::Initial;
-                            if !gotdata {
+                            if !gotdata || matches!(me.options.end, Some(end) if me.offset >= end) {
                                 return Poll::Ready(None);
                             }
                         }
@@ -282,7 +314,7 @@ pub struct PackageLog<'a> {
     arch: String,
 }
 
-impl PackageLog<'_> {
+impl<'a> PackageLog<'a> {
     fn request(&self) -> Result<Url> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
@@ -296,10 +328,9 @@ impl PackageLog<'_> {
         Ok(u)
     }
 
-    pub fn stream(&self, offset: usize) -> Result<PackageLogStream> {
+    pub fn stream(&self, options: PackageLogStreamOptions) -> Result<PackageLogStream<'a>> {
         let u = self.request()?;
-        println!("Requesting: {:?}", u);
-        Ok(PackageLogStream::new(self.client, offset, u))
+        Ok(PackageLogStream::new(self.client, options, u))
     }
 
     /// Returns size and mtime
@@ -323,7 +354,7 @@ pub struct PackageBuilder<'a> {
     pub package: String,
 }
 
-impl PackageBuilder<'_> {
+impl<'a> PackageBuilder<'a> {
     fn full_request(&self, repository: &str, arch: &str, command: &str) -> Result<Url> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
@@ -352,7 +383,7 @@ impl PackageBuilder<'_> {
         self.client.request(u).await
     }
 
-    pub fn log(&self, repository: &str, arch: &str) -> PackageLog<'_> {
+    pub fn log(&self, repository: &str, arch: &str) -> PackageLog<'a> {
         PackageLog {
             client: self.client,
             project: self.project.clone(),
@@ -362,13 +393,18 @@ impl PackageBuilder<'_> {
         }
     }
 
-    pub async fn list(&self) -> Result<Directory> {
+    pub async fn list(&self, rev: Option<&str>) -> Result<Directory> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
             .map_err(|_| Error::InvalidUrl)?
             .push("source")
             .push(&self.project)
             .push(&self.package);
+
+        if let Some(rev) = rev {
+            u.query_pairs_mut().append_pair("rev", rev);
+        }
+
         self.client.request(u).await
     }
 
@@ -407,14 +443,58 @@ impl<'a> ProjectBuilder<'a> {
             .push("_result");
         self.client.request(u).await
     }
+
+    pub async fn repositories(&self) -> Result<Vec<String>> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("build")
+            .push(&self.project);
+        Ok(self
+            .client
+            .request::<RepoDirectory>(u)
+            .await?
+            .entries
+            .into_iter()
+            .map(|e| e.name)
+            .collect())
+    }
+
+    pub async fn arches(&self, repository: &str) -> Result<Vec<String>> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("build")
+            .push(&self.project)
+            .push(repository);
+        Ok(self
+            .client
+            .request::<RepoDirectory>(u)
+            .await?
+            .entries
+            .into_iter()
+            .map(|e| e.name)
+            .collect())
+    }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Client {
     base: Url,
     user: String,
     pass: String,
     client: reqwest::Client,
+}
+
+impl std::fmt::Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Client")
+            .field("base", &format_args!("{:?}", self.base))
+            .field("user", &self.user)
+            .field("pass", &"[redacted]")
+            .field("client", &format_args!("{:?}", self.client))
+            .finish()
+    }
 }
 
 impl Client {
@@ -435,8 +515,7 @@ impl Client {
     }
 
     fn get(&self, url: Url) -> RequestBuilder {
-        self
-            .client
+        self.client
             .get(url)
             .basic_auth(&self.user, Some(&self.pass))
     }
@@ -446,23 +525,24 @@ impl Client {
 
         match response.error_for_status_ref() {
             Ok(_) => Ok(response),
-            Err(e) => if let Some(status) = e.status() {
-                if status.is_client_error() {
-                    let data = response.text() .await?;
-                    let error = quick_xml::de::from_str(&data)?;
-                    Err(Error::ApiError(error))
+            Err(e) => {
+                if let Some(status) = e.status() {
+                    if status.is_client_error() {
+                        let data = response.text().await?;
+                        let error = quick_xml::de::from_str(&data)?;
+                        Err(Error::ApiError(error))
+                    } else {
+                        Err(e.into())
+                    }
                 } else {
                     Err(e.into())
                 }
-            } else {
-                Err(e.into())
             }
-
         }
     }
 
     async fn request<T: DeserializeOwned + std::fmt::Debug>(&self, url: Url) -> Result<T> {
         let data = Self::send_with_error(self.get(url)).await?.text().await?;
-        quick_xml::de::from_str(&data).map_err( | e | e.into() )
+        quick_xml::de::from_str(&data).map_err(|e| e.into())
     }
 }

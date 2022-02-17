@@ -18,7 +18,7 @@ futures = "0.3.14"
 bytes = "1.0.1"
 
 [dev-dependencies]
-open-build-service-api = { path = "../open-build-service-api" }
+open-build-service-mock = { path = "../open-build-service-mock" }
 oscrc = { path = "../oscrc" }
 url = { version = "2.2", features = [ "serde" ] }
 structopt = "0.3.21"
