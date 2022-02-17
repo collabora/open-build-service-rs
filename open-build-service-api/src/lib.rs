@@ -478,12 +478,23 @@ impl<'a> ProjectBuilder<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Client {
     base: Url,
     user: String,
     pass: String,
     client: reqwest::Client,
+}
+
+impl std::fmt::Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Client")
+            .field("base", &format_args!("{:?}", self.base))
+            .field("user", &self.user)
+            .field("pass", &"[redacted]")
+            .field("client", &format_args!("{:?}", self.client))
+            .finish()
+    }
 }
 
 impl Client {
