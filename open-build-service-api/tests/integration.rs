@@ -47,11 +47,12 @@ fn create_authenticated_client(mock: ObsMock) -> Client {
 #[tokio::test]
 async fn test_package_list() {
     let mock = start_mock().await;
+    mock.add_project(test_project());
 
     let mtime = SystemTime::UNIX_EPOCH + Duration::new(10, 0);
     let srcmd5 = random_md5();
     mock.add_package_revision(
-        test_project(),
+        &test_project(),
         test_package_1(),
         MockRevisionOptions {
             time: mtime.clone(),
@@ -90,7 +91,7 @@ async fn test_package_list() {
     let test_data = b"abc";
 
     mock.add_package_revision(
-        test_project(),
+        &test_project(),
         test_package_1(),
         MockRevisionOptions {
             srcmd5: srcmd5.clone(),
@@ -136,7 +137,7 @@ async fn test_package_list() {
     mock.branch(
         test_project(),
         test_package_1(),
-        test_project(),
+        &test_project(),
         test_package_2(),
         MockBranchOptions {
             srcmd5: branch_srcmd5.clone(),
@@ -185,14 +186,16 @@ fn get_results_by_arch(mut results: ResultList) -> (ResultListResult, ResultList
 #[tokio::test]
 async fn test_build_repo_listing() {
     let mock = start_mock().await;
+
+    mock.add_project(test_project());
     mock.add_or_update_repository(
-        test_project(),
+        &test_project(),
         test_repo(),
         test_arch_1(),
         MockRepositoryCode::Building,
     );
     mock.add_or_update_repository(
-        test_project(),
+        &test_project(),
         test_repo(),
         test_arch_2(),
         MockRepositoryCode::Broken,
@@ -215,14 +218,16 @@ async fn test_build_repo_listing() {
 #[tokio::test]
 async fn test_build_results() {
     let mock = start_mock().await;
+
+    mock.add_project(test_project());
     mock.add_or_update_repository(
-        test_project(),
+        &test_project(),
         test_repo(),
         test_arch_1(),
         MockRepositoryCode::Building,
     );
     mock.add_or_update_repository(
-        test_project(),
+        &test_project(),
         test_repo(),
         test_arch_2(),
         MockRepositoryCode::Broken,
@@ -310,8 +315,10 @@ async fn test_build_results() {
 #[tokio::test]
 async fn test_build_status() {
     let mock = start_mock().await;
+
+    mock.add_project(test_project());
     mock.add_or_update_repository(
-        test_project(),
+        &test_project(),
         test_repo(),
         test_arch_1(),
         MockRepositoryCode::Building,
@@ -369,8 +376,10 @@ async fn test_build_logs() {
     };
 
     let mock = start_mock().await;
+
+    mock.add_project(test_project());
     mock.add_or_update_repository(
-        test_project(),
+        &test_project(),
         test_repo(),
         test_arch_1(),
         MockRepositoryCode::Building,

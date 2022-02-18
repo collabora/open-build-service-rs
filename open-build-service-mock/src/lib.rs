@@ -223,8 +223,10 @@ struct MockProject {
 
 type ProjectMap = HashMap<String, MockProject>;
 
-fn add_project(projects: &mut ProjectMap, name: String) -> &mut MockProject {
-    projects.entry(name).or_default()
+fn get_project<'p, 'n>(projects: &'p mut ProjectMap, name: &'n str) -> &'p mut MockProject {
+    projects
+        .get_mut(name)
+        .unwrap_or_else(|| panic!("Unknown project: {}", name))
 }
 
 struct Inner {
@@ -301,9 +303,14 @@ impl ObsMock {
         &self.inner.projects
     }
 
+    pub fn add_project(&self, project_name: String) {
+        let mut projects = self.inner.projects.write().unwrap();
+        projects.entry(project_name).or_default();
+    }
+
     pub fn add_package_revision(
         &self,
-        project_name: String,
+        project_name: &str,
         package_name: String,
         mut options: MockRevisionOptions,
     ) {
@@ -313,7 +320,9 @@ impl ObsMock {
             .insert(MockEntry::META_NAME.to_owned(), meta);
 
         let mut projects = self.inner.projects.write().unwrap();
-        let project = add_project(&mut *projects, project_name);
+        let project = projects
+            .get_mut(project_name)
+            .unwrap_or_else(|| panic!("Unknown project: {}", project_name));
 
         let package = project
             .packages
@@ -343,7 +352,7 @@ impl ObsMock {
         &self,
         origin_project_name: String,
         origin_package_name: String,
-        branched_project_name: String,
+        branched_project_name: &str,
         branched_package_name: String,
         options: MockBranchOptions,
     ) {
@@ -352,9 +361,7 @@ impl ObsMock {
 
         let mut projects = self.inner.projects.write().unwrap();
 
-        let origin = projects
-            .get(&origin_project_name)
-            .unwrap_or_else(|| panic!("Unknown project: {}", origin_project_name))
+        let origin = get_project(&mut *projects, &origin_project_name)
             .packages
             .get(&origin_package_name)
             .unwrap_or_else(|| {
@@ -381,7 +388,7 @@ impl ObsMock {
         let mut latest_vrevs = HashMap::new();
         latest_vrevs.insert(None, 1);
 
-        let project = add_project(&mut *projects, branched_project_name);
+        let project = get_project(&mut *projects, branched_project_name);
 
         project.packages.insert(
             branched_package_name,
@@ -399,19 +406,20 @@ impl ObsMock {
                     linkinfo: vec![linkinfo],
                 }],
                 latest_vrevs,
+                pending_rev_entries: HashMap::new(),
             },
         );
     }
 
     pub fn add_or_update_repository(
         &self,
-        project_name: String,
+        project_name: &str,
         repo_name: String,
         arch: String,
         code: MockRepositoryCode,
     ) {
         let mut projects = self.inner.projects.write().unwrap();
-        let project = add_project(&mut *projects, project_name);
+        let project = get_project(&mut *projects, project_name);
 
         project
             .repos
@@ -434,10 +442,7 @@ impl ObsMock {
         func: F,
     ) -> R {
         let mut projects = self.inner.projects.write().unwrap();
-
-        let project = projects
-            .get_mut(project_name)
-            .unwrap_or_else(|| panic!("Unknown project: {}", project_name));
+        let project = get_project(&mut *projects, project_name);
 
         let package = project
             .repos
