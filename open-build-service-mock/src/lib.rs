@@ -6,7 +6,8 @@ use std::{
 
 use api::{
     ArchListingResponder, BuildLogResponder, BuildPackageStatusResponder, BuildResultsResponder,
-    PackageSourcesResponder, RepoListingResponder,
+    PackageSourceCommandResponder, PackageSourceFileResponder, PackageSourceListingResponder,
+    PackageSourcePlacementResponder, RepoListingResponder,
 };
 
 use http_types::auth::BasicAuth;
@@ -143,9 +144,30 @@ impl Default for MockPackageCode {
     }
 }
 
+#[derive(Default)]
 struct MockPackage {
     revisions: Vec<MockRevision>,
     latest_vrevs: HashMap<Option<String>, usize>,
+    pending_rev_entries: HashMap<String, MockEntry>,
+}
+
+impl MockPackage {
+    fn add_revision(&mut self, options: MockRevisionOptions) {
+        let vrev = self
+            .latest_vrevs
+            .entry(options.version.clone())
+            .or_default();
+        *vrev += 1;
+
+        self.revisions.push(MockRevision {
+            vrev: *vrev,
+            options,
+            linkinfo: self
+                .revisions
+                .last()
+                .map_or_else(Vec::new, |rev| rev.linkinfo.clone()),
+        });
+    }
 }
 
 pub struct MockBranchOptions {
@@ -254,7 +276,25 @@ impl ObsMock {
 
         Mock::given(method("GET"))
             .and(path_regex("^/source/[^/]+/[^/]+$"))
-            .respond_with(PackageSourcesResponder::new(server.clone()))
+            .respond_with(PackageSourceListingResponder::new(server.clone()))
+            .mount(&server.inner.server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path_regex("^/source/[^/]+/[^/]+$"))
+            .respond_with(PackageSourceCommandResponder::new(server.clone()))
+            .mount(&server.inner.server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path_regex("^/source/[^/]+/[^/]+/[^/]+$"))
+            .respond_with(PackageSourceFileResponder::new(server.clone()))
+            .mount(&server.inner.server)
+            .await;
+
+        Mock::given(method("PUT"))
+            .and(path_regex("^/source/[^/]+/[^/]+/[^/]+$"))
+            .respond_with(PackageSourcePlacementResponder::new(server.clone()))
             .mount(&server.inner.server)
             .await;
 
@@ -324,28 +364,8 @@ impl ObsMock {
             .get_mut(project_name)
             .unwrap_or_else(|| panic!("Unknown project: {}", project_name));
 
-        let package = project
-            .packages
-            .entry(package_name)
-            .or_insert_with(|| MockPackage {
-                revisions: Vec::new(),
-                latest_vrevs: HashMap::new(),
-            });
-
-        let last_vrev = package
-            .latest_vrevs
-            .entry(options.version.clone())
-            .or_default();
-        *last_vrev += 1;
-
-        package.revisions.push(MockRevision {
-            vrev: *last_vrev,
-            options,
-            linkinfo: package
-                .revisions
-                .last()
-                .map_or_else(Vec::new, |rev| rev.linkinfo.clone()),
-        });
+        let package = project.packages.entry(package_name).or_default();
+        package.add_revision(options);
     }
 
     pub fn branch(

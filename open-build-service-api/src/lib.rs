@@ -3,8 +3,9 @@ use futures::future::BoxFuture;
 use futures::prelude::*;
 use futures::ready;
 use futures::stream::BoxStream;
-use quick_xml::de::DeError;
-use reqwest::{RequestBuilder, Response};
+use md5::{Digest, Md5};
+use quick_xml::{de::DeError, events::Event};
+use reqwest::{header::CONTENT_TYPE, Body, Method, RequestBuilder, Response};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -170,6 +171,72 @@ pub struct Directory {
     pub linkinfo: Vec<LinkInfo>,
 }
 
+#[derive(Clone, Deserialize, Serialize, Debug)]
+pub struct CommitEntry {
+    pub name: String,
+    pub md5: String,
+}
+
+impl CommitEntry {
+    pub fn from_contents<T: AsRef<[u8]>>(name: String, contents: T) -> CommitEntry {
+        let md5 = base16ct::lower::encode_string(&Md5::digest(&contents));
+        CommitEntry { name, md5 }
+    }
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(tag = "error", rename = "missing")]
+pub struct MissingEntries {
+    #[serde(rename = "entry")]
+    pub entries: Vec<CommitEntry>,
+}
+
+#[derive(Debug)]
+pub enum CommitResult {
+    Success(Directory),
+    MissingEntries(MissingEntries),
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename = "directory")]
+pub struct CommitFileList {
+    #[serde(rename = "entry")]
+    entries: Vec<CommitEntry>,
+}
+
+impl CommitFileList {
+    pub fn new() -> Self {
+        CommitFileList::default()
+    }
+
+    pub fn add_entry(&mut self, entry: CommitEntry) {
+        self.entries.push(entry);
+    }
+
+    pub fn add_file_md5(&mut self, name: String, md5: String) {
+        self.add_entry(CommitEntry { name, md5 });
+    }
+
+    pub fn add_file_from_contents(&mut self, name: String, contents: &[u8]) {
+        self.add_entry(CommitEntry::from_contents(name, contents));
+    }
+
+    pub fn entry(mut self, entry: CommitEntry) -> Self {
+        self.add_entry(entry);
+        self
+    }
+
+    pub fn file_md5(mut self, name: String, md5: String) -> Self {
+        self.add_file_md5(name, md5);
+        self
+    }
+
+    pub fn file_from_contents(mut self, name: String, contents: &[u8]) -> Self {
+        self.add_file_from_contents(name, contents);
+        self
+    }
+}
+
 #[derive(Deserialize, Debug)]
 pub struct ResultListResult {
     pub project: String,
@@ -274,7 +341,7 @@ impl Stream for PackageLogStream<'_> {
                         Ok(u) => u,
                         Err(e) => return Poll::Ready(Some(Err(e))),
                     };
-                    let r = me.client.get(u);
+                    let r = me.client.authenticated_request(Method::GET, u);
                     let r = Client::send_with_error(r).boxed();
                     me.request = PackageLogRequest::Request(r);
                 }
@@ -368,6 +435,35 @@ impl<'a> PackageBuilder<'a> {
         Ok(u)
     }
 
+    async fn upload_file<T: Into<Body>>(
+        &self,
+        file: &str,
+        rev: Option<&str>,
+        data: T,
+    ) -> Result<()> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push(&self.package)
+            .push(file);
+
+        if let Some(rev) = rev {
+            u.query_pairs_mut().append_pair("rev", rev);
+        }
+
+        Client::send_with_error(
+            self.client
+                .authenticated_request(Method::PUT, u)
+                .header(CONTENT_TYPE, "application/octet-stream")
+                .body(data),
+        )
+        .await?;
+
+        Ok(())
+    }
+
     pub async fn jobstatus(&self, repository: &str, arch: &str) -> Result<JobStatus> {
         let u = self.full_request(repository, arch, "_jobstatus")?;
         self.client.request(u).await
@@ -393,6 +489,19 @@ impl<'a> PackageBuilder<'a> {
         }
     }
 
+    pub async fn create(&self) -> Result<()> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push(&self.package)
+            .push("_meta");
+
+        self.upload_file("_meta", None, "<package/>").await?;
+        Ok(())
+    }
+
     pub async fn list(&self, rev: Option<&str>) -> Result<Directory> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
@@ -406,6 +515,99 @@ impl<'a> PackageBuilder<'a> {
         }
 
         self.client.request(u).await
+    }
+
+    pub async fn source_file(&self, file: &str) -> Result<impl Stream<Item = Result<Bytes>>> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push(&self.package)
+            .push(file);
+        Ok(
+            Client::send_with_error(self.client.authenticated_request(Method::GET, u))
+                .await?
+                .bytes_stream()
+                .map_err(|e| e.into()),
+        )
+    }
+
+    pub async fn upload_for_commit<T: Into<Body>>(&self, file: &str, data: T) -> Result<()> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push(&self.package)
+            .push(file);
+        self.upload_file(file, Some("repository"), data).await?;
+        Ok(())
+    }
+
+    pub async fn commit(&self, filelist: &CommitFileList) -> Result<CommitResult> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push(&self.package);
+        u.query_pairs_mut().append_pair("cmd", "commitfilelist");
+
+        let mut body = Vec::new();
+        quick_xml::se::to_writer(&mut body, filelist)?;
+
+        let response = Client::send_with_error(
+            self.client
+                .authenticated_request(Method::POST, u)
+                .header(CONTENT_TYPE, "application/xml")
+                .body(body),
+        )
+        .await?
+        .text()
+        .await?;
+
+        // We determine whether or not there were missing entries by the
+        // presence of the "error" key, then use that to choose what enum value
+        // to deserialize to. Ideally, we would be able to use untagged enum
+        // magic: https://stackoverflow.com/a/61219284/2097780
+        // Unfortunately, serde implementation details collide with quick-xml to
+        // result in that not functioning here:
+        // https://github.com/serde-rs/serde/issues/1183
+        // https://github.com/tafia/quick-xml/issues/190
+        // https://github.com/tafia/quick-xml/issues/203
+        // Untagged enum deserialization logic depends on private serde API
+        // functions, so it's not possible to implement it cleanly in a custom
+        // "Deserialize".
+
+        let mut reader = quick_xml::Reader::from_str(&response);
+        reader.trim_text(true);
+        let mut buf = Vec::new();
+        if let Event::Start(e) = reader.read_event(&mut buf).map_err(DeError::Xml)? {
+            let mut is_missing = false;
+            for attr in e.attributes() {
+                let attr = attr.map_err(DeError::Xml)?;
+                if attr.key == b"error" {
+                    if attr.value.as_ref() != b"missing" {
+                        return Err(DeError::Custom(
+                            "only supported value for 'error' is 'missing'".to_owned(),
+                        )
+                        .into());
+                    }
+
+                    is_missing = true;
+                    break;
+                }
+            }
+
+            Ok(if is_missing {
+                CommitResult::MissingEntries(quick_xml::de::from_str(&response)?)
+            } else {
+                CommitResult::Success(quick_xml::de::from_str(&response)?)
+            })
+        } else {
+            Err(DeError::Start.into())
+        }
     }
 
     pub async fn result(&self) -> Result<ResultList> {
@@ -514,9 +716,9 @@ impl Client {
         }
     }
 
-    fn get(&self, url: Url) -> RequestBuilder {
+    fn authenticated_request(&self, method: Method, url: Url) -> RequestBuilder {
         self.client
-            .get(url)
+            .request(method, url)
             .basic_auth(&self.user, Some(&self.pass))
     }
 
@@ -542,7 +744,10 @@ impl Client {
     }
 
     async fn request<T: DeserializeOwned + std::fmt::Debug>(&self, url: Url) -> Result<T> {
-        let data = Self::send_with_error(self.get(url)).await?.text().await?;
+        let data = Self::send_with_error(self.authenticated_request(Method::GET, url))
+            .await?
+            .text()
+            .await?;
         quick_xml::de::from_str(&data).map_err(|e| e.into())
     }
 }
