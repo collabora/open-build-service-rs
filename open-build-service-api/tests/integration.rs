@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use futures::StreamExt;
+use futures::{StreamExt, TryStreamExt};
 
 use open_build_service_api::*;
 use open_build_service_mock::*;
@@ -45,11 +45,11 @@ fn create_authenticated_client(mock: ObsMock) -> Client {
 }
 
 #[tokio::test]
-async fn test_package_list() {
+async fn test_source_list() {
     let mock = start_mock().await;
     mock.add_project(test_project());
 
-    let mtime = SystemTime::UNIX_EPOCH + Duration::new(10, 0);
+    let mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
     let srcmd5 = random_md5();
     mock.add_package_revision(
         &test_project(),
@@ -165,6 +165,109 @@ async fn test_package_list() {
     assert_eq!(linkinfo.srcmd5, srcmd5);
     assert_eq!(linkinfo.lsrcmd5, branch_srcmd5);
     assert_eq!(linkinfo.xsrcmd5, branch_xsrcmd5);
+}
+
+#[tokio::test]
+async fn test_source_get() {
+    let test_file = "test";
+    let test_contents = b"some file contents here";
+
+    let mock = start_mock().await;
+    mock.add_project(test_project());
+
+    mock.add_package_revision(
+        &test_project(),
+        test_package_1(),
+        MockRevisionOptions {
+            entries: [(
+                test_file.to_owned(),
+                MockEntry::new_with_contents(SystemTime::UNIX_EPOCH, test_contents.to_vec()),
+            )]
+            .into(),
+            ..Default::default()
+        },
+    );
+
+    let obs = create_authenticated_client(mock);
+
+    let mut data = Vec::new();
+    obs.project(test_project())
+        .package(test_package_1())
+        .source_file(test_file)
+        .await
+        .unwrap()
+        .try_for_each(|chunk| {
+            data.extend_from_slice(&chunk);
+            futures::future::ready(Ok(()))
+        })
+        .await
+        .unwrap();
+    assert_eq!(&data[..], test_contents);
+}
+
+#[tokio::test]
+async fn test_commits() {
+    let test_file = "test";
+    let test_contents = b"some file contents here";
+    let test_entry = CommitEntry::from_contents(test_file.to_owned(), test_contents);
+
+    let file_list = CommitFileList::new().entry(test_entry.clone());
+
+    let mock = start_mock().await;
+
+    mock.add_project(test_project());
+
+    let obs = create_authenticated_client(mock);
+
+    obs.project(test_project())
+        .package(test_package_1())
+        .create()
+        .await
+        .unwrap();
+
+    let commit_result = obs
+        .project(test_project())
+        .package(test_package_1())
+        .commit(&file_list)
+        .await
+        .unwrap();
+    if let CommitResult::MissingEntries(missing) = commit_result {
+        assert_eq!(missing.entries.len(), 1);
+        assert_eq!(missing.entries[0].name, test_entry.name);
+        assert_eq!(missing.entries[0].md5, test_entry.md5);
+    } else {
+        panic!("Expected missing entries, got {:?}", commit_result);
+    }
+
+    obs.project(test_project())
+        .package(test_package_1())
+        .upload_for_commit(test_file, test_contents.to_vec())
+        .await
+        .unwrap();
+
+    let commit_result = obs
+        .project(test_project())
+        .package(test_package_1())
+        .commit(&file_list)
+        .await
+        .unwrap();
+    if let CommitResult::Success(directory) = commit_result {
+        assert_eq!(directory.entries.len(), 1);
+        assert_eq!(directory.entries[0].name, test_entry.name);
+        assert_eq!(directory.entries[0].md5, test_entry.md5);
+    } else {
+        panic!("Expected missing entries, got {:?}", commit_result);
+    }
+
+    let directory = obs
+        .project(test_project())
+        .package(test_package_1())
+        .list(None)
+        .await
+        .unwrap();
+    assert_eq!(directory.entries.len(), 1);
+    assert_eq!(directory.entries[0].name, test_entry.name);
+    assert_eq!(directory.entries[0].md5, test_entry.md5);
 }
 
 fn get_results_by_arch(mut results: ResultList) -> (ResultListResult, ResultListResult) {
