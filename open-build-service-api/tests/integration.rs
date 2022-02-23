@@ -1,4 +1,7 @@
-use std::time::{Duration, SystemTime};
+use std::{
+    collections::HashMap,
+    time::{Duration, SystemTime},
+};
 
 use futures::{StreamExt, TryStreamExt};
 
@@ -49,19 +52,27 @@ async fn test_source_list() {
     let mock = start_mock().await;
     mock.add_project(test_project());
 
+    mock.add_new_package(
+        &test_project(),
+        test_package_1(),
+        MockPackageOptions::default(),
+    );
+
     let mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
     let srcmd5 = random_md5();
     mock.add_package_revision(
         &test_project(),
-        test_package_1(),
+        &test_package_1(),
         MockRevisionOptions {
             time: mtime.clone(),
             srcmd5: srcmd5.clone(),
             ..Default::default()
         },
+        HashMap::new(),
     );
 
     let obs = create_authenticated_client(mock.clone());
+
     let dir = obs
         .project(test_project())
         .package(test_package_1())
@@ -74,34 +85,49 @@ async fn test_source_list() {
     assert_eq!(dir.vrev, "1");
     assert_eq!(dir.srcmd5, srcmd5);
 
-    assert_eq!(dir.entries.len(), 1);
+    assert_eq!(dir.entries.len(), 0);
     assert_eq!(dir.linkinfo.len(), 0);
 
-    let meta = &dir.entries[0];
+    let meta_dir = obs
+        .project(test_project())
+        .package(test_package_1())
+        .list_meta(None)
+        .await
+        .unwrap();
+
+    assert_eq!(meta_dir.name, test_package_1());
+    assert_eq!(meta_dir.rev, "1");
+    assert_eq!(meta_dir.vrev, "");
+
+    assert_eq!(meta_dir.entries.len(), 1);
+    assert_eq!(meta_dir.linkinfo.len(), 0);
+
+    let meta = &meta_dir.entries[0];
     assert_eq!(meta.name, "_meta");
-    assert_eq!(
-        meta.mtime,
-        mtime
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
+
+    let test_data = b"abc";
+    let test_key = mock.add_package_files(
+        &test_project(),
+        &test_package_1(),
+        MockSourceFile {
+            path: "test".to_owned(),
+            contents: test_data.to_vec(),
+        },
     );
 
     let srcmd5 = random_md5();
-    let test_data = b"abc";
-
     mock.add_package_revision(
         &test_project(),
-        test_package_1(),
+        &test_package_1(),
         MockRevisionOptions {
             srcmd5: srcmd5.clone(),
-            entries: [(
-                "test".to_owned(),
-                MockEntry::new_with_contents(SystemTime::now(), test_data.to_vec()),
-            )]
-            .into(),
             ..Default::default()
         },
+        [(
+            "test".to_owned(),
+            MockEntry::from_key(&test_key, SystemTime::now()),
+        )]
+        .into(),
     );
 
     let dir = obs
@@ -116,9 +142,9 @@ async fn test_source_list() {
     assert_eq!(dir.vrev, "2");
     assert_eq!(dir.srcmd5, srcmd5);
 
-    assert_eq!(dir.entries.len(), 2);
+    assert_eq!(dir.entries.len(), 1);
 
-    let test_entry = dir.entries.iter().find(|e| e.name == "test").unwrap();
+    let test_entry = &dir.entries[0];
     assert_eq!(test_entry.size, test_data.len() as u64);
 
     let dir = obs
@@ -129,7 +155,7 @@ async fn test_source_list() {
         .unwrap();
 
     assert_eq!(dir.rev, "1");
-    assert_eq!(dir.entries.len(), 1);
+    assert_eq!(dir.entries.len(), 0);
 
     let branch_srcmd5 = random_md5();
     let branch_xsrcmd5 = random_md5();
@@ -156,7 +182,7 @@ async fn test_source_list() {
     assert_eq!(dir.rev, "1");
     assert_eq!(dir.vrev, "1");
     assert_eq!(dir.srcmd5, branch_srcmd5);
-    assert_eq!(dir.entries.len(), 2);
+    assert_eq!(dir.entries.len(), 1);
     assert_eq!(dir.linkinfo.len(), 1);
 
     let linkinfo = &dir.linkinfo[0];
@@ -174,18 +200,30 @@ async fn test_source_get() {
 
     let mock = start_mock().await;
     mock.add_project(test_project());
+    mock.add_new_package(
+        &test_project(),
+        test_package_1(),
+        MockPackageOptions::default(),
+    );
+
+    let test_key = mock.add_package_files(
+        &test_project(),
+        &test_package_1(),
+        MockSourceFile {
+            path: test_file.to_owned(),
+            contents: test_contents.to_vec(),
+        },
+    );
 
     mock.add_package_revision(
         &test_project(),
-        test_package_1(),
-        MockRevisionOptions {
-            entries: [(
-                test_file.to_owned(),
-                MockEntry::new_with_contents(SystemTime::UNIX_EPOCH, test_contents.to_vec()),
-            )]
-            .into(),
-            ..Default::default()
-        },
+        &test_package_1(),
+        MockRevisionOptions::default(),
+        [(
+            test_file.to_owned(),
+            MockEntry::from_key(&test_key, SystemTime::now()),
+        )]
+        .into(),
     );
 
     let obs = create_authenticated_client(mock);

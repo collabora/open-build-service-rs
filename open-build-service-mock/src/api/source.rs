@@ -8,7 +8,10 @@ use wiremock::ResponseTemplate;
 use wiremock::{Request, Respond};
 use xml_builder::XMLElement;
 
-use crate::{random_md5, MockEntry, MockRevision, MockRevisionOptions, ObsMock};
+use crate::{
+    random_md5, MockEntry, MockPackage, MockPackageOptions, MockRevision, MockRevisionOptions,
+    MockSourceFile, MockSourceFileKey, ObsMock,
+};
 
 use super::*;
 
@@ -24,11 +27,20 @@ fn source_file_not_found(name: &str) -> ApiError {
     )
 }
 
-fn source_listing_xml(package_name: &str, rev_id: usize, rev: &MockRevision) -> XMLElement {
+fn source_listing_xml(
+    package_name: &str,
+    package: &MockPackage,
+    rev_id: usize,
+    rev: &MockRevision,
+) -> XMLElement {
     let mut xml = XMLElement::new("directory");
     xml.add_attribute("name", package_name);
     xml.add_attribute("rev", &rev_id.to_string());
-    xml.add_attribute("vrev", &rev.vrev.to_string());
+    xml.add_attribute(
+        "vrev",
+        &rev.vrev
+            .map_or_else(|| "".to_owned(), |vrev| vrev.to_string()),
+    );
     xml.add_attribute("srcmd5", &rev.options.srcmd5);
 
     for linkinfo in &rev.linkinfo {
@@ -43,11 +55,16 @@ fn source_listing_xml(package_name: &str, rev_id: usize, rev: &MockRevision) -> 
         xml.add_child(link_xml).unwrap();
     }
 
-    for (name, entry) in &rev.options.entries {
+    for (path, entry) in &rev.entries {
+        let contents = package
+            .files
+            .get(&MockSourceFileKey::borrowed(path, &entry.md5))
+            .unwrap();
+
         let mut entry_xml = XMLElement::new("entry");
-        entry_xml.add_attribute("name", name);
+        entry_xml.add_attribute("name", path);
         entry_xml.add_attribute("md5", &entry.md5);
-        entry_xml.add_attribute("size", &entry.contents.len().to_string());
+        entry_xml.add_attribute("size", &contents.len().to_string());
         entry_xml.add_attribute(
             "mtime",
             &entry
@@ -97,6 +114,19 @@ impl Respond for PackageSourceListingResponder {
             .get(package_name)
             .ok_or_else(|| unknown_package(package_name.to_owned())));
 
+        let list_meta = match find_query_param(request, "meta").as_deref() {
+            Some("1") => true,
+            None | Some("0") => false,
+            Some(_) => {
+                return ApiError::new(
+                    StatusCode::BadRequest,
+                    "400".to_owned(),
+                    "not boolean".to_owned(),
+                )
+                .into_response()
+            }
+        };
+
         let rev_id = if let Some(rev_arg) = find_query_param(request, "rev") {
             let index: usize = try_api!(rev_arg.parse().map_err(|_| ApiError::new(
                 StatusCode::BadRequest,
@@ -104,7 +134,7 @@ impl Respond for PackageSourceListingResponder {
                 format!("bad revision '{}'", rev_arg)
             )));
             ensure!(
-                index <= package.revisions.len(),
+                index <= package.revisions.len() && (index > 0 || !list_meta),
                 ApiError::new(
                     StatusCode::BadRequest,
                     "400".to_owned(),
@@ -118,6 +148,8 @@ impl Respond for PackageSourceListingResponder {
         };
 
         if rev_id == 0 {
+            assert!(!list_meta);
+
             // OBS seems to have this weird zero revision that always has
             // the same md5 but no contents, so we just handle it in here.
             const ZERO_REV_SRCMD5: &str = "d41d8cd98f00b204e9800998ecf8427e";
@@ -129,10 +161,17 @@ impl Respond for PackageSourceListingResponder {
             return ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml);
         }
 
+        let revisions = if list_meta {
+            &package.meta_revisions
+        } else {
+            &package.revisions
+        };
+
         // -1 to skip the zero revision (see above).
-        let rev = &package.revisions[rev_id - 1];
+        let rev = &revisions[rev_id - 1];
         ResponseTemplate::new(StatusCode::Ok).set_body_xml(source_listing_xml(
             package_name,
+            package,
             rev_id,
             rev,
         ))
@@ -168,32 +207,37 @@ impl Respond for PackageSourceFileResponder {
             .get(package_name)
             .ok_or_else(|| unknown_package(package_name.to_owned())));
 
-        match package.revisions.last() {
-            Some(rev) => {
-                let entry = try_api!(rev
-                    .options
-                    .entries
-                    .get(file_name)
-                    .ok_or_else(|| source_file_not_found(file_name)));
-                let content_type = if file_name == "_meta" {
-                    "application/xml"
-                } else {
-                    "application/octet-stream"
-                };
-
-                ResponseTemplate::new(200).set_body_raw(entry.contents.clone(), content_type)
-            }
-            None => {
-                // For "revision 0", only "_meta" is valid.
-                if file_name == "_meta" {
-                    ResponseTemplate::new(200).set_body_raw(
-                        MockEntry::new_metadata(project_name, package_name, SystemTime::UNIX_EPOCH)
-                            .contents,
-                        "application/xml",
-                    )
-                } else {
-                    source_file_not_found(file_name).into_response()
+        if file_name == "_meta" {
+            let entry = package
+                .meta_revisions
+                .last()
+                .unwrap()
+                .entries
+                .get(MockSourceFile::META_PATH)
+                .unwrap();
+            let meta = package
+                .files
+                .get(&MockSourceFileKey::borrowed(
+                    MockSourceFile::META_PATH,
+                    &entry.md5,
+                ))
+                .unwrap();
+            ResponseTemplate::new(200).set_body_raw(meta.clone(), "application/xml")
+        } else {
+            match package.revisions.last() {
+                Some(rev) => {
+                    let entry = try_api!(rev
+                        .entries
+                        .get(file_name)
+                        .ok_or_else(|| source_file_not_found(file_name)));
+                    let contents = package
+                        .files
+                        .get(&MockSourceFileKey::borrowed(file_name, &entry.md5))
+                        .unwrap();
+                    ResponseTemplate::new(200)
+                        .set_body_raw(contents.clone(), "application/octet-stream")
                 }
+                None => source_file_not_found(file_name).into_response(),
             }
         }
     }
@@ -237,32 +281,40 @@ impl Respond for PackageSourcePlacementResponder {
             .get_mut(project_name)
             .ok_or_else(|| unknown_project(project_name.to_owned())));
 
-        let package = if file_name == "_meta" {
-            // Creating _meta will create an empty package.
-            project.packages.entry(package_name.to_owned()).or_default()
-        } else {
-            try_api!(project
-                .packages
-                .get_mut(package_name)
-                .ok_or_else(|| unknown_package(package_name.to_owned())))
-        };
-
         if file_name == "_meta" {
             // TODO: parse file, return errors if attributes don't match (the
             // API crate doesn't add these at all, so leaving this out for now
             // is relatively low-risk)
 
-            // We don't actually *add* _meta changes, since that's added to
-            // commits on-demand. It sort-of matches with OBS's behavior of
-            // completely re-formatting / serializing the metadata & ignoring
-            // any unknown tags and such.
+            project
+                .packages
+                .entry(package_name.to_owned())
+                .or_insert_with(|| {
+                    MockPackage::new_with_metadata(
+                        project_name,
+                        package_name,
+                        MockPackageOptions {
+                            initial_meta_srcmd5: random_md5(),
+                            time: SystemTime::now(),
+                            user: self.mock.auth().username().to_owned(),
+                        },
+                    )
+                });
+
             ResponseTemplate::new(StatusCode::Ok).set_body_status_xml("ok", "Ok".to_owned())
         } else {
+            let package = try_api!(project
+                .packages
+                .get_mut(package_name)
+                .ok_or_else(|| unknown_package(package_name.to_owned())));
+
             if matches!(rev.as_ref().map(AsRef::as_ref), Some("repository")) {
-                package.pending_rev_entries.insert(
-                    file_name.to_owned(),
-                    MockEntry::new_with_contents(SystemTime::now(), request.body.clone()),
-                );
+                let file = MockSourceFile {
+                    path: file_name.to_owned(),
+                    contents: request.body.clone(),
+                };
+                let (key, contents) = file.into_key_and_contents();
+                package.files.insert(key, contents);
 
                 let mut xml = XMLElement::new("revision");
                 xml.add_attribute("rev", "repository");
@@ -331,26 +383,20 @@ impl Respond for PackageSourceCommandResponder {
 
                 let filelist: DirectoryRequest = try_api!(parse_xml_request(request));
                 let mut missing = Vec::new();
-                let last_rev = package.revisions.last();
 
                 for req_entry in filelist.entries {
-                    if let Some(entry) = package.pending_rev_entries.get(&req_entry.name) {
-                        if entry.md5 == req_entry.md5 {
-                            entries.insert(req_entry.name, entry.clone());
-                            continue;
-                        }
+                    let key = MockSourceFileKey::borrowed(&req_entry.name, &req_entry.md5);
+                    if package.files.get(&key).is_some() {
+                        entries.insert(
+                            key.path.into_owned(),
+                            MockEntry {
+                                md5: key.md5.into_owned(),
+                                mtime: time,
+                            },
+                        );
+                    } else {
+                        missing.push(req_entry);
                     }
-
-                    if let Some(last_rev) = last_rev {
-                        if let Some(entry) = last_rev.options.entries.get(&req_entry.name) {
-                            if entry.md5 == req_entry.md5 {
-                                entries.insert(req_entry.name, entry.clone());
-                                continue;
-                            }
-                        }
-                    }
-
-                    missing.push(req_entry);
                 }
 
                 if !missing.is_empty() {
@@ -369,8 +415,6 @@ impl Respond for PackageSourceCommandResponder {
                     return ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml);
                 }
 
-                package.pending_rev_entries.clear();
-
                 let options = MockRevisionOptions {
                     srcmd5: random_md5(),
                     // TODO: detect the source package version
@@ -378,14 +422,14 @@ impl Respond for PackageSourceCommandResponder {
                     time,
                     user: self.mock.auth().username().to_owned(),
                     comment: comment.map(|c| c.into_owned()),
-                    entries,
                 };
-                package.add_revision(options);
+                package.add_revision(options, entries);
 
                 let rev_id = package.revisions.len();
                 let rev = package.revisions.last().unwrap();
                 ResponseTemplate::new(StatusCode::Ok).set_body_xml(source_listing_xml(
                     package_name,
+                    package,
                     rev_id,
                     rev,
                 ))
