@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::HashMap,
     sync::{Arc, RwLock},
     time::SystemTime,
@@ -29,6 +30,69 @@ pub fn random_md5() -> String {
     base16ct::lower::encode_string(&md5bytes)
 }
 
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct MockSourceFileKey<'path, 'md5> {
+    pub path: Cow<'path, str>,
+    pub md5: Cow<'md5, str>,
+}
+
+impl<'path, 'md5> MockSourceFileKey<'path, 'md5> {
+    pub fn borrowed(path: &'path str, md5: &'md5 str) -> Self {
+        MockSourceFileKey {
+            path: Cow::Borrowed(path),
+            md5: Cow::Borrowed(md5),
+        }
+    }
+
+    pub fn into_owned(self) -> MockSourceFileKey<'static, 'static> {
+        MockSourceFileKey {
+            path: Cow::Owned(self.path.into_owned()),
+            md5: Cow::Owned(self.md5.into_owned()),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MockSourceFile {
+    pub path: String,
+    pub contents: Vec<u8>,
+}
+
+impl MockSourceFile {
+    const META_PATH: &'static str = "_meta";
+
+    pub fn new_metadata(project: &str, package: &str) -> MockSourceFile {
+        let mut xml = XMLElement::new("package");
+        xml.add_attribute("name", project);
+        xml.add_attribute("project", package);
+
+        xml.add_child(XMLElement::new("title")).unwrap();
+        xml.add_child(XMLElement::new("description")).unwrap();
+
+        let mut contents = vec![];
+        xml.render(&mut contents, false, true).unwrap();
+
+        MockSourceFile {
+            path: MockSourceFile::META_PATH.to_owned(),
+            contents,
+        }
+    }
+
+    fn md5(&self) -> String {
+        base16ct::lower::encode_string(&Md5::digest(&self.contents))
+    }
+
+    fn into_key_and_contents(self) -> (MockSourceFileKey<'static, 'static>, Vec<u8>) {
+        (
+            MockSourceFileKey {
+                md5: Cow::Owned(self.md5()),
+                path: Cow::Owned(self.path),
+            },
+            self.contents,
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 struct MockLinkInfo {
     project: String,
@@ -41,35 +105,16 @@ struct MockLinkInfo {
 
 #[derive(Debug, Clone)]
 pub struct MockEntry {
-    md5: String,
-    mtime: SystemTime,
-    contents: Vec<u8>,
+    pub md5: String,
+    pub mtime: SystemTime,
 }
 
 impl MockEntry {
-    const META_NAME: &'static str = "_meta";
-
-    pub fn new_with_contents(mtime: SystemTime, contents: Vec<u8>) -> MockEntry {
-        let md5 = base16ct::lower::encode_string(&Md5::digest(&contents));
+    pub fn from_key(key: &MockSourceFileKey, mtime: SystemTime) -> MockEntry {
         MockEntry {
+            md5: key.md5.clone().into_owned(),
             mtime,
-            contents,
-            md5,
         }
-    }
-
-    fn new_metadata(project: &str, package: &str, mtime: SystemTime) -> MockEntry {
-        let mut xml = XMLElement::new("package");
-        xml.add_attribute("name", project);
-        xml.add_attribute("project", package);
-
-        xml.add_child(XMLElement::new("title")).unwrap();
-        xml.add_child(XMLElement::new("description")).unwrap();
-
-        let mut contents = vec![];
-        xml.render(&mut contents, false, true).unwrap();
-
-        MockEntry::new_with_contents(mtime, contents)
     }
 }
 
@@ -83,7 +128,6 @@ pub struct MockRevisionOptions {
     pub time: SystemTime,
     pub user: String,
     pub comment: Option<String>,
-    pub entries: HashMap<String, MockEntry>,
 }
 
 impl Default for MockRevisionOptions {
@@ -93,7 +137,6 @@ impl Default for MockRevisionOptions {
             version: None,
             time: SystemTime::now(),
             user: ADMIN_USER.to_owned(),
-            entries: HashMap::new(),
             comment: None,
         }
     }
@@ -101,9 +144,10 @@ impl Default for MockRevisionOptions {
 
 #[derive(Debug, Clone)]
 struct MockRevision {
-    vrev: usize,
+    vrev: Option<usize>,
     linkinfo: Vec<MockLinkInfo>,
     options: MockRevisionOptions,
+    entries: HashMap<String, MockEntry>,
 }
 
 #[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq)]
@@ -144,24 +188,74 @@ impl Default for MockPackageCode {
     }
 }
 
-#[derive(Default)]
+pub struct MockPackageOptions {
+    pub initial_meta_srcmd5: String,
+    pub time: SystemTime,
+    pub user: String,
+}
+
+impl Default for MockPackageOptions {
+    fn default() -> Self {
+        Self {
+            initial_meta_srcmd5: random_md5(),
+            time: SystemTime::now(),
+            user: ADMIN_USER.to_owned(),
+        }
+    }
+}
+
 struct MockPackage {
+    files: HashMap<MockSourceFileKey<'static, 'static>, Vec<u8>>,
     revisions: Vec<MockRevision>,
+    meta_revisions: Vec<MockRevision>,
     latest_vrevs: HashMap<Option<String>, usize>,
-    pending_rev_entries: HashMap<String, MockEntry>,
 }
 
 impl MockPackage {
-    fn add_revision(&mut self, options: MockRevisionOptions) {
+    fn new_with_metadata(
+        project_name: &str,
+        package_name: &str,
+        options: MockPackageOptions,
+    ) -> MockPackage {
+        let (meta_key, meta_contents) =
+            MockSourceFile::new_metadata(project_name, package_name).into_key_and_contents();
+        let meta_entry = MockEntry::from_key(&meta_key, options.time);
+        MockPackage {
+            files: [(meta_key, meta_contents)].into(),
+            revisions: Vec::new(),
+            meta_revisions: vec![MockRevision {
+                vrev: None,
+                options: MockRevisionOptions {
+                    srcmd5: options.initial_meta_srcmd5,
+                    version: None,
+                    time: options.time,
+                    user: options.user,
+                    comment: None,
+                },
+                entries: [(MockSourceFile::META_PATH.to_owned(), meta_entry)].into(),
+                linkinfo: vec![],
+            }],
+            latest_vrevs: HashMap::new(),
+        }
+    }
+
+    fn add_revision(&mut self, options: MockRevisionOptions, entries: HashMap<String, MockEntry>) {
         let vrev = self
             .latest_vrevs
             .entry(options.version.clone())
             .or_default();
         *vrev += 1;
 
+        for (path, entry) in &entries {
+            assert!(self
+                .files
+                .contains_key(&MockSourceFileKey::borrowed(path, &entry.md5)));
+        }
+
         self.revisions.push(MockRevision {
-            vrev: *vrev,
+            vrev: Some(*vrev),
             options,
+            entries,
             linkinfo: self
                 .revisions
                 .last()
@@ -249,6 +343,13 @@ fn get_project<'p, 'n>(projects: &'p mut ProjectMap, name: &'n str) -> &'p mut M
     projects
         .get_mut(name)
         .unwrap_or_else(|| panic!("Unknown project: {}", name))
+}
+
+fn get_package<'p, 'n>(project: &'p mut MockProject, name: &'n str) -> &'p mut MockPackage {
+    project
+        .packages
+        .get_mut(name)
+        .unwrap_or_else(|| panic!("Unknown package: {}", name))
 }
 
 struct Inner {
@@ -348,24 +449,46 @@ impl ObsMock {
         projects.entry(project_name).or_default();
     }
 
-    pub fn add_package_revision(
+    pub fn add_new_package(
         &self,
         project_name: &str,
         package_name: String,
-        mut options: MockRevisionOptions,
+        options: MockPackageOptions,
     ) {
-        let meta = MockEntry::new_metadata(&project_name, &package_name, options.time);
-        options
-            .entries
-            .insert(MockEntry::META_NAME.to_owned(), meta);
+        let mut projects = self.inner.projects.write().unwrap();
+        let project = get_project(&mut *projects, project_name);
+        let package = MockPackage::new_with_metadata(project_name, &package_name, options);
+        project.packages.insert(package_name, package);
+    }
 
+    pub fn add_package_files(
+        &self,
+        project_name: &str,
+        package_name: &str,
+        file: MockSourceFile,
+    ) -> MockSourceFileKey {
         let mut projects = self.inner.projects.write().unwrap();
         let project = projects
             .get_mut(project_name)
             .unwrap_or_else(|| panic!("Unknown project: {}", project_name));
+        let package = get_package(project, package_name);
 
-        let package = project.packages.entry(package_name).or_default();
-        package.add_revision(options);
+        let (key, contents) = file.into_key_and_contents();
+        package.files.insert(key.clone(), contents);
+        key
+    }
+
+    pub fn add_package_revision(
+        &self,
+        project_name: &str,
+        package_name: &str,
+        options: MockRevisionOptions,
+        entries: HashMap<String, MockEntry>,
+    ) {
+        let mut projects = self.inner.projects.write().unwrap();
+        let project = get_project(&mut *projects, project_name);
+        let package = get_package(project, package_name);
+        package.add_revision(options, entries);
     }
 
     pub fn branch(
@@ -376,25 +499,21 @@ impl ObsMock {
         branched_package_name: String,
         options: MockBranchOptions,
     ) {
-        let meta =
-            MockEntry::new_metadata(&branched_project_name, &branched_package_name, options.time);
+        let (meta_key, meta_contents) =
+            MockSourceFile::new_metadata(branched_project_name, &branched_package_name)
+                .into_key_and_contents();
+        let meta_entry = MockEntry::from_key(&meta_key, options.time);
 
         let mut projects = self.inner.projects.write().unwrap();
+        let origin_project = get_project(&mut *projects, &origin_project_name);
+        let origin = get_package(origin_project, &origin_package_name);
 
-        let origin = get_project(&mut *projects, &origin_project_name)
-            .packages
-            .get(&origin_package_name)
-            .unwrap_or_else(|| {
-                panic!(
-                    "Unknown package: {}/{}",
-                    origin_project_name, origin_package_name
-                )
-            });
+        let mut origin_files = origin.files.clone();
         let origin_rev = origin.revisions.last().unwrap();
-        let mut origin_entries = origin_rev.options.entries.clone();
+        let origin_entries = origin_rev.entries.clone();
         let origin_srcmd5 = origin_rev.options.srcmd5.clone();
 
-        origin_entries.insert(MockEntry::META_NAME.to_owned(), meta);
+        origin_files.insert(meta_key, meta_contents);
 
         let linkinfo = MockLinkInfo {
             project: origin_project_name,
@@ -413,20 +532,32 @@ impl ObsMock {
         project.packages.insert(
             branched_package_name,
             MockPackage {
+                files: origin_files,
                 revisions: vec![MockRevision {
-                    vrev: 1,
+                    vrev: Some(1),
                     options: MockRevisionOptions {
                         srcmd5: options.srcmd5,
                         version: None,
                         time: options.time,
-                        user: options.user,
-                        comment: options.comment,
-                        entries: origin_entries,
+                        user: options.user.clone(),
+                        comment: options.comment.clone(),
                     },
                     linkinfo: vec![linkinfo],
+                    entries: origin_entries,
+                }],
+                meta_revisions: vec![MockRevision {
+                    vrev: None,
+                    options: MockRevisionOptions {
+                        srcmd5: random_md5(),
+                        version: None,
+                        time: options.time,
+                        user: options.user,
+                        comment: options.comment,
+                    },
+                    linkinfo: vec![],
+                    entries: [(MockSourceFile::META_PATH.to_owned(), meta_entry)].into(),
                 }],
                 latest_vrevs,
-                pending_rev_entries: HashMap::new(),
             },
         );
     }

@@ -165,7 +165,7 @@ pub struct Directory {
     pub rev: String,
     pub vrev: String,
     pub srcmd5: String,
-    #[serde(rename = "entry")]
+    #[serde(default, rename = "entry")]
     pub entries: Vec<DirectoryEntry>,
     #[serde(default, rename = "linkinfo")]
     pub linkinfo: Vec<LinkInfo>,
@@ -502,7 +502,7 @@ impl<'a> PackageBuilder<'a> {
         Ok(())
     }
 
-    pub async fn list(&self, rev: Option<&str>) -> Result<Directory> {
+    fn list_url(&self, rev: Option<&str>) -> Result<reqwest::Url> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
             .map_err(|_| Error::InvalidUrl)?
@@ -514,6 +514,17 @@ impl<'a> PackageBuilder<'a> {
             u.query_pairs_mut().append_pair("rev", rev);
         }
 
+        Ok(u)
+    }
+
+    pub async fn list(&self, rev: Option<&str>) -> Result<Directory> {
+        let u = self.list_url(rev)?;
+        self.client.request(u).await
+    }
+
+    pub async fn list_meta(&self, rev: Option<&str>) -> Result<Directory> {
+        let mut u = self.list_url(rev)?;
+        u.query_pairs_mut().append_pair("meta", "1");
         self.client.request(u).await
     }
 
