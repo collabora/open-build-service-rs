@@ -58,6 +58,19 @@ async fn test_source_list() {
         MockPackageOptions::default(),
     );
 
+    let obs = create_authenticated_client(mock.clone());
+
+    let dir = obs
+        .project(test_project())
+        .package(test_package_1())
+        .list(None)
+        .await
+        .unwrap();
+
+    assert_eq!(dir.name, test_package_1());
+    assert!(dir.rev.is_none());
+    assert!(dir.vrev.is_none());
+
     let mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
     let srcmd5 = random_md5();
     mock.add_package_revision(
@@ -71,8 +84,6 @@ async fn test_source_list() {
         HashMap::new(),
     );
 
-    let obs = create_authenticated_client(mock.clone());
-
     let dir = obs
         .project(test_project())
         .package(test_package_1())
@@ -81,8 +92,8 @@ async fn test_source_list() {
         .unwrap();
 
     assert_eq!(dir.name, test_package_1());
-    assert_eq!(dir.rev, "1");
-    assert_eq!(dir.vrev, "1");
+    assert_eq!(dir.rev.unwrap(), "1");
+    assert_eq!(dir.vrev.unwrap(), "1");
     assert_eq!(dir.srcmd5, srcmd5);
 
     assert_eq!(dir.entries.len(), 0);
@@ -96,8 +107,8 @@ async fn test_source_list() {
         .unwrap();
 
     assert_eq!(meta_dir.name, test_package_1());
-    assert_eq!(meta_dir.rev, "1");
-    assert_eq!(meta_dir.vrev, "");
+    assert_eq!(meta_dir.rev.unwrap(), "1");
+    assert!(meta_dir.vrev.is_none());
 
     assert_eq!(meta_dir.entries.len(), 1);
     assert_eq!(meta_dir.linkinfo.len(), 0);
@@ -138,8 +149,8 @@ async fn test_source_list() {
         .unwrap();
 
     assert_eq!(dir.name, test_package_1());
-    assert_eq!(dir.rev, "2");
-    assert_eq!(dir.vrev, "2");
+    assert_eq!(dir.rev.unwrap(), "2");
+    assert_eq!(dir.vrev.unwrap(), "2");
     assert_eq!(dir.srcmd5, srcmd5);
 
     assert_eq!(dir.entries.len(), 1);
@@ -154,7 +165,7 @@ async fn test_source_list() {
         .await
         .unwrap();
 
-    assert_eq!(dir.rev, "1");
+    assert_eq!(dir.rev.unwrap(), "1");
     assert_eq!(dir.entries.len(), 0);
 
     let branch_srcmd5 = random_md5();
@@ -179,8 +190,8 @@ async fn test_source_list() {
         .await
         .unwrap();
 
-    assert_eq!(dir.rev, "1");
-    assert_eq!(dir.vrev, "1");
+    assert_eq!(dir.rev.unwrap(), "1");
+    assert_eq!(dir.vrev.unwrap(), "1");
     assert_eq!(dir.srcmd5, branch_srcmd5);
     assert_eq!(dir.entries.len(), 1);
     assert_eq!(dir.linkinfo.len(), 1);

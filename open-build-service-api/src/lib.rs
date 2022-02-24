@@ -162,8 +162,8 @@ pub struct DirectoryEntry {
 #[derive(Deserialize, Debug)]
 pub struct Directory {
     pub name: String,
-    pub rev: String,
-    pub vrev: String,
+    pub rev: Option<String>,
+    pub vrev: Option<String>,
     pub srcmd5: String,
     #[serde(default, rename = "entry")]
     pub entries: Vec<DirectoryEntry>,
