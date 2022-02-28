@@ -54,6 +54,16 @@ async fn test_source_list() {
     assert!(dir.rev.is_none());
     assert!(dir.vrev.is_none());
 
+    let meta_dir = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .list_meta(None)
+        .await
+        .unwrap();
+
+    assert_eq!(meta_dir.name, TEST_PACKAGE_1);
+    assert_eq!(meta_dir.rev.unwrap(), "1");
+    assert!(meta_dir.vrev.is_none());
     let mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
     let srcmd5 = random_md5();
     mock.add_package_revision(
@@ -81,17 +91,6 @@ async fn test_source_list() {
 
     assert_eq!(dir.entries.len(), 0);
     assert_eq!(dir.linkinfo.len(), 0);
-
-    let meta_dir = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .list_meta(None)
-        .await
-        .unwrap();
-
-    assert_eq!(meta_dir.name, TEST_PACKAGE_1);
-    assert_eq!(meta_dir.rev.unwrap(), "1");
-    assert!(meta_dir.vrev.is_none());
 
     assert_eq!(meta_dir.entries.len(), 1);
     assert_eq!(meta_dir.linkinfo.len(), 0);
