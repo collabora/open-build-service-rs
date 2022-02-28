@@ -127,6 +127,12 @@ impl Respond for PackageSourceListingResponder {
             }
         };
 
+        let revisions = if list_meta {
+            &package.meta_revisions
+        } else {
+            &package.revisions
+        };
+
         let rev_id = if let Some(rev_arg) = find_query_param(request, "rev") {
             let index: usize = try_api!(rev_arg.parse().map_err(|_| ApiError::new(
                 StatusCode::BadRequest,
@@ -144,7 +150,7 @@ impl Respond for PackageSourceListingResponder {
 
             index
         } else {
-            package.revisions.len()
+            revisions.len()
         };
 
         if rev_id == 0 {
@@ -160,12 +166,6 @@ impl Respond for PackageSourceListingResponder {
 
             return ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml);
         }
-
-        let revisions = if list_meta {
-            &package.meta_revisions
-        } else {
-            &package.revisions
-        };
 
         // -1 to skip the zero revision (see above).
         let rev = &revisions[rev_id - 1];
