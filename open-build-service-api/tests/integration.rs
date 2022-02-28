@@ -11,29 +11,12 @@ use open_build_service_mock::*;
 const DEFAULT_USERNAME: &str = "user";
 const DEFAULT_PASSWORD: &str = "pass";
 
-fn test_project() -> String {
-    "test_project".to_owned()
-}
-
-fn test_repo() -> String {
-    "test_repo".to_owned()
-}
-
-fn test_arch_1() -> String {
-    "aarch64".to_owned()
-}
-
-fn test_arch_2() -> String {
-    "x86_64".to_owned()
-}
-
-fn test_package_1() -> String {
-    "test_package_1".to_owned()
-}
-
-fn test_package_2() -> String {
-    "test_package_2".to_owned()
-}
+const TEST_PROJECT: &str = "test_project";
+const TEST_REPO: &str = "test_repo";
+const TEST_ARCH_1: &str = "aarch64";
+const TEST_ARCH_2: &str = "x86_64";
+const TEST_PACKAGE_1: &str = "test_package_1";
+const TEST_PACKAGE_2: &str = "test_package_2";
 
 async fn start_mock() -> ObsMock {
     ObsMock::start(DEFAULT_USERNAME, DEFAULT_PASSWORD).await
@@ -50,32 +33,32 @@ fn create_authenticated_client(mock: ObsMock) -> Client {
 #[tokio::test]
 async fn test_source_list() {
     let mock = start_mock().await;
-    mock.add_project(test_project());
+    mock.add_project(TEST_PROJECT.to_owned());
 
     mock.add_new_package(
-        &test_project(),
-        test_package_1(),
+        TEST_PROJECT,
+        TEST_PACKAGE_1.to_owned(),
         MockPackageOptions::default(),
     );
 
     let obs = create_authenticated_client(mock.clone());
 
     let dir = obs
-        .project(test_project())
-        .package(test_package_1())
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
         .list(None)
         .await
         .unwrap();
 
-    assert_eq!(dir.name, test_package_1());
+    assert_eq!(dir.name, TEST_PACKAGE_1);
     assert!(dir.rev.is_none());
     assert!(dir.vrev.is_none());
 
     let mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
     let srcmd5 = random_md5();
     mock.add_package_revision(
-        &test_project(),
-        &test_package_1(),
+        TEST_PROJECT,
+        TEST_PACKAGE_1,
         MockRevisionOptions {
             time: mtime.clone(),
             srcmd5: srcmd5.clone(),
@@ -85,13 +68,13 @@ async fn test_source_list() {
     );
 
     let dir = obs
-        .project(test_project())
-        .package(test_package_1())
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
         .list(None)
         .await
         .unwrap();
 
-    assert_eq!(dir.name, test_package_1());
+    assert_eq!(dir.name, TEST_PACKAGE_1);
     assert_eq!(dir.rev.unwrap(), "1");
     assert_eq!(dir.vrev.unwrap(), "1");
     assert_eq!(dir.srcmd5, srcmd5);
@@ -100,13 +83,13 @@ async fn test_source_list() {
     assert_eq!(dir.linkinfo.len(), 0);
 
     let meta_dir = obs
-        .project(test_project())
-        .package(test_package_1())
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
         .list_meta(None)
         .await
         .unwrap();
 
-    assert_eq!(meta_dir.name, test_package_1());
+    assert_eq!(meta_dir.name, TEST_PACKAGE_1);
     assert_eq!(meta_dir.rev.unwrap(), "1");
     assert!(meta_dir.vrev.is_none());
 
@@ -118,8 +101,8 @@ async fn test_source_list() {
 
     let test_data = b"abc";
     let test_key = mock.add_package_files(
-        &test_project(),
-        &test_package_1(),
+        TEST_PROJECT,
+        TEST_PACKAGE_1,
         MockSourceFile {
             path: "test".to_owned(),
             contents: test_data.to_vec(),
@@ -128,8 +111,8 @@ async fn test_source_list() {
 
     let srcmd5 = random_md5();
     mock.add_package_revision(
-        &test_project(),
-        &test_package_1(),
+        TEST_PROJECT,
+        TEST_PACKAGE_1,
         MockRevisionOptions {
             srcmd5: srcmd5.clone(),
             ..Default::default()
@@ -142,13 +125,13 @@ async fn test_source_list() {
     );
 
     let dir = obs
-        .project(test_project())
-        .package(test_package_1())
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
         .list(None)
         .await
         .unwrap();
 
-    assert_eq!(dir.name, test_package_1());
+    assert_eq!(dir.name, TEST_PACKAGE_1);
     assert_eq!(dir.rev.unwrap(), "2");
     assert_eq!(dir.vrev.unwrap(), "2");
     assert_eq!(dir.srcmd5, srcmd5);
@@ -159,8 +142,8 @@ async fn test_source_list() {
     assert_eq!(test_entry.size, test_data.len() as u64);
 
     let dir = obs
-        .project(test_project())
-        .package(test_package_1())
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
         .list(Some("1"))
         .await
         .unwrap();
@@ -172,10 +155,10 @@ async fn test_source_list() {
     let branch_xsrcmd5 = random_md5();
 
     mock.branch(
-        test_project(),
-        test_package_1(),
-        &test_project(),
-        test_package_2(),
+        TEST_PROJECT.to_owned(),
+        TEST_PACKAGE_1.to_owned(),
+        TEST_PROJECT,
+        TEST_PACKAGE_2.to_owned(),
         MockBranchOptions {
             srcmd5: branch_srcmd5.clone(),
             xsrcmd5: branch_xsrcmd5.clone(),
@@ -184,8 +167,8 @@ async fn test_source_list() {
     );
 
     let dir = obs
-        .project(test_project())
-        .package(test_package_2())
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_2.to_owned())
         .list(None)
         .await
         .unwrap();
@@ -197,8 +180,8 @@ async fn test_source_list() {
     assert_eq!(dir.linkinfo.len(), 1);
 
     let linkinfo = &dir.linkinfo[0];
-    assert_eq!(linkinfo.project, test_project());
-    assert_eq!(linkinfo.package, test_package_1());
+    assert_eq!(linkinfo.project, TEST_PROJECT);
+    assert_eq!(linkinfo.package, TEST_PACKAGE_1);
     assert_eq!(linkinfo.srcmd5, srcmd5);
     assert_eq!(linkinfo.lsrcmd5, branch_srcmd5);
     assert_eq!(linkinfo.xsrcmd5, branch_xsrcmd5);
@@ -210,16 +193,16 @@ async fn test_source_get() {
     let test_contents = b"some file contents here";
 
     let mock = start_mock().await;
-    mock.add_project(test_project());
+    mock.add_project(TEST_PROJECT.to_owned());
     mock.add_new_package(
-        &test_project(),
-        test_package_1(),
+        TEST_PROJECT,
+        TEST_PACKAGE_1.to_owned(),
         MockPackageOptions::default(),
     );
 
     let test_key = mock.add_package_files(
-        &test_project(),
-        &test_package_1(),
+        TEST_PROJECT,
+        TEST_PACKAGE_1,
         MockSourceFile {
             path: test_file.to_owned(),
             contents: test_contents.to_vec(),
@@ -227,8 +210,8 @@ async fn test_source_get() {
     );
 
     mock.add_package_revision(
-        &test_project(),
-        &test_package_1(),
+        TEST_PROJECT,
+        TEST_PACKAGE_1,
         MockRevisionOptions::default(),
         [(
             test_file.to_owned(),
@@ -240,8 +223,8 @@ async fn test_source_get() {
     let obs = create_authenticated_client(mock);
 
     let mut data = Vec::new();
-    obs.project(test_project())
-        .package(test_package_1())
+    obs.project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
         .source_file(test_file)
         .await
         .unwrap()
@@ -264,19 +247,19 @@ async fn test_commits() {
 
     let mock = start_mock().await;
 
-    mock.add_project(test_project());
+    mock.add_project(TEST_PROJECT.to_owned());
 
     let obs = create_authenticated_client(mock);
 
-    obs.project(test_project())
-        .package(test_package_1())
+    obs.project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
         .create()
         .await
         .unwrap();
 
     let commit_result = obs
-        .project(test_project())
-        .package(test_package_1())
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
         .commit(&file_list)
         .await
         .unwrap();
@@ -288,15 +271,15 @@ async fn test_commits() {
         panic!("Expected missing entries, got {:?}", commit_result);
     }
 
-    obs.project(test_project())
-        .package(test_package_1())
+    obs.project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
         .upload_for_commit(test_file, test_contents.to_vec())
         .await
         .unwrap();
 
     let commit_result = obs
-        .project(test_project())
-        .package(test_package_1())
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
         .commit(&file_list)
         .await
         .unwrap();
@@ -309,8 +292,8 @@ async fn test_commits() {
     }
 
     let directory = obs
-        .project(test_project())
-        .package(test_package_1())
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
         .list(None)
         .await
         .unwrap();
@@ -329,8 +312,8 @@ fn get_results_by_arch(mut results: ResultList) -> (ResultListResult, ResultList
     let a = it.next().unwrap();
     let b = it.next().unwrap();
 
-    assert_eq!(a.arch, test_arch_1());
-    assert_eq!(b.arch, test_arch_2());
+    assert_eq!(a.arch, TEST_ARCH_1);
+    assert_eq!(b.arch, TEST_ARCH_2);
 
     (a, b)
 }
@@ -339,65 +322,69 @@ fn get_results_by_arch(mut results: ResultList) -> (ResultListResult, ResultList
 async fn test_build_repo_listing() {
     let mock = start_mock().await;
 
-    mock.add_project(test_project());
+    mock.add_project(TEST_PROJECT.to_owned());
     mock.add_or_update_repository(
-        &test_project(),
-        test_repo(),
-        test_arch_1(),
+        TEST_PROJECT,
+        TEST_REPO.to_owned(),
+        TEST_ARCH_1.to_owned(),
         MockRepositoryCode::Building,
     );
     mock.add_or_update_repository(
-        &test_project(),
-        test_repo(),
-        test_arch_2(),
+        TEST_PROJECT,
+        TEST_REPO.to_owned(),
+        TEST_ARCH_2.to_owned(),
         MockRepositoryCode::Broken,
     );
 
     let obs = create_authenticated_client(mock.clone());
 
-    let repositories = obs.project(test_project()).repositories().await.unwrap();
-    assert_eq!(&repositories[..], &[test_repo()]);
+    let repositories = obs
+        .project(TEST_PROJECT.to_owned())
+        .repositories()
+        .await
+        .unwrap();
+    assert_eq!(&repositories[..], &[TEST_REPO]);
 
     let mut arches = obs
-        .project(test_project())
-        .arches(&test_repo())
+        .project(TEST_PROJECT.to_owned())
+        .arches(TEST_REPO)
         .await
         .unwrap();
     arches.sort();
-    assert_eq!(&arches[..], &[test_arch_1(), test_arch_2()]);
+    assert_eq!(&arches[..], &[TEST_ARCH_1, TEST_ARCH_2]);
 }
 
 #[tokio::test]
 async fn test_build_results() {
     let mock = start_mock().await;
 
-    mock.add_project(test_project());
+    mock.add_project(TEST_PROJECT.to_owned());
     mock.add_or_update_repository(
-        &test_project(),
-        test_repo(),
-        test_arch_1(),
+        TEST_PROJECT,
+        TEST_REPO.to_owned(),
+        TEST_ARCH_1.to_owned(),
         MockRepositoryCode::Building,
     );
     mock.add_or_update_repository(
-        &test_project(),
-        test_repo(),
-        test_arch_2(),
+        TEST_PROJECT,
+        TEST_REPO.to_owned(),
+        TEST_ARCH_2.to_owned(),
         MockRepositoryCode::Broken,
     );
 
     mock.set_package_build_status(
-        &test_project(),
-        &test_repo(),
-        &test_arch_1(),
-        test_package_1(),
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        TEST_PACKAGE_1.to_owned(),
         MockBuildStatus::new(MockPackageCode::Building),
     );
 
     mock.set_package_build_status(
-        &test_project(),
-        &test_repo(),
-        &test_arch_2(),
-        test_package_2(),
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_2,
+        TEST_PACKAGE_2.to_owned(),
         MockBuildStatus {
             code: MockPackageCode::Broken,
             dirty: true,
@@ -406,52 +393,52 @@ async fn test_build_results() {
 
     let obs = create_authenticated_client(mock.clone());
 
-    let results = obs.project(test_project()).result().await.unwrap();
+    let results = obs.project(TEST_PROJECT.to_owned()).result().await.unwrap();
     let (arch1_repo, arch2_repo) = get_results_by_arch(results);
 
-    assert_eq!(arch1_repo.project, test_project());
-    assert_eq!(arch1_repo.repository, test_repo());
+    assert_eq!(arch1_repo.project, TEST_PROJECT);
+    assert_eq!(arch1_repo.repository, TEST_REPO);
     assert_eq!(arch1_repo.code, RepositoryCode::Building);
     assert_eq!(arch1_repo.statuses.len(), 1);
 
     let package1 = &arch1_repo.statuses[0];
-    assert_eq!(package1.package, test_package_1());
+    assert_eq!(package1.package, TEST_PACKAGE_1);
     assert_eq!(package1.code, PackageCode::Building);
     assert!(!package1.dirty);
 
-    assert_eq!(arch2_repo.project, test_project());
-    assert_eq!(arch2_repo.repository, test_repo());
+    assert_eq!(arch2_repo.project, TEST_PROJECT);
+    assert_eq!(arch2_repo.repository, TEST_REPO);
     assert_eq!(arch2_repo.code, RepositoryCode::Broken);
     assert_eq!(arch2_repo.statuses.len(), 1);
 
     let package2 = &arch2_repo.statuses[0];
-    assert_eq!(package2.package, test_package_2());
+    assert_eq!(package2.package, TEST_PACKAGE_2);
     assert_eq!(package2.code, PackageCode::Broken);
     assert!(package2.dirty);
 
     mock.set_package_build_status(
-        &test_project(),
-        &test_repo(),
-        &test_arch_1(),
-        test_package_2(),
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        TEST_PACKAGE_2.to_owned(),
         MockBuildStatus::new(MockPackageCode::Broken),
     );
 
-    let results = obs.project(test_project()).result().await.unwrap();
+    let results = obs.project(TEST_PROJECT.to_owned()).result().await.unwrap();
     let (arch1_repo, _) = get_results_by_arch(results);
 
     let package2_arch2 = arch1_repo
         .statuses
         .iter()
-        .filter(|status| status.package == test_package_2())
+        .filter(|status| status.package == TEST_PACKAGE_2)
         .next()
         .unwrap();
-    assert_eq!(package2_arch2.package, test_package_2());
+    assert_eq!(package2_arch2.package, TEST_PACKAGE_2);
     assert_eq!(package2_arch2.code, PackageCode::Broken);
 
     let results = obs
-        .project(test_project())
-        .package(test_package_2())
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_2.to_owned())
         .result()
         .await
         .unwrap();
@@ -460,47 +447,47 @@ async fn test_build_results() {
     assert_eq!(arch1_repo.statuses.len(), 1);
     assert_eq!(arch2_repo.statuses.len(), 1);
 
-    assert_eq!(arch1_repo.statuses[0].package, test_package_2());
-    assert_eq!(arch2_repo.statuses[0].package, test_package_2());
+    assert_eq!(arch1_repo.statuses[0].package, TEST_PACKAGE_2);
+    assert_eq!(arch2_repo.statuses[0].package, TEST_PACKAGE_2);
 }
 
 #[tokio::test]
 async fn test_build_status() {
     let mock = start_mock().await;
 
-    mock.add_project(test_project());
+    mock.add_project(TEST_PROJECT.to_owned());
     mock.add_or_update_repository(
-        &test_project(),
-        test_repo(),
-        test_arch_1(),
+        TEST_PROJECT,
+        TEST_REPO.to_owned(),
+        TEST_ARCH_1.to_owned(),
         MockRepositoryCode::Building,
     );
     mock.set_package_build_status(
-        &test_project(),
-        &test_repo(),
-        &test_arch_1(),
-        test_package_1(),
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        TEST_PACKAGE_1.to_owned(),
         MockBuildStatus::new(MockPackageCode::Building),
     );
 
     let obs = create_authenticated_client(mock.clone());
 
     let status = obs
-        .project(test_project())
-        .package(test_package_1())
-        .status(&test_repo(), &test_arch_1())
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .status(TEST_REPO, TEST_ARCH_1)
         .await
         .unwrap();
 
-    assert_eq!(status.package, test_package_1());
+    assert_eq!(status.package, TEST_PACKAGE_1);
     assert_eq!(status.code, PackageCode::Building);
     assert!(!status.dirty);
 
     mock.set_package_build_status(
-        &test_project(),
-        &test_repo(),
-        &test_arch_1(),
-        test_package_1(),
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        TEST_PACKAGE_1.to_owned(),
         MockBuildStatus {
             code: MockPackageCode::Unknown,
             dirty: true,
@@ -508,13 +495,13 @@ async fn test_build_status() {
     );
 
     let status = obs
-        .project(test_project())
-        .package(test_package_1())
-        .status(&test_repo(), &test_arch_1())
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .status(TEST_REPO, TEST_ARCH_1)
         .await
         .unwrap();
 
-    assert_eq!(status.package, test_package_1());
+    assert_eq!(status.package, TEST_PACKAGE_1);
     assert_eq!(status.code, PackageCode::Unknown);
     assert!(status.dirty);
 }
@@ -529,18 +516,18 @@ async fn test_build_logs() {
 
     let mock = start_mock().await;
 
-    mock.add_project(test_project());
+    mock.add_project(TEST_PROJECT.to_owned());
     mock.add_or_update_repository(
-        &test_project(),
-        test_repo(),
-        test_arch_1(),
+        TEST_PROJECT,
+        TEST_REPO.to_owned(),
+        TEST_ARCH_1.to_owned(),
         MockRepositoryCode::Building,
     );
     mock.add_completed_build_log(
-        &test_project(),
-        &test_repo(),
-        &test_arch_1(),
-        test_package_1(),
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        TEST_PACKAGE_1.to_owned(),
         log.clone(),
         false,
     );
@@ -548,9 +535,9 @@ async fn test_build_logs() {
     let obs = create_authenticated_client(mock.clone());
 
     let (size, mtime) = obs
-        .project(test_project())
-        .package(test_package_1())
-        .log(&test_repo(), &test_arch_1())
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .log(TEST_REPO, TEST_ARCH_1)
         .entry()
         .await
         .unwrap();
@@ -559,9 +546,9 @@ async fn test_build_logs() {
     assert_eq!(mtime, 0);
 
     let mut stream = obs
-        .project(test_project())
-        .package(test_package_1())
-        .log(&test_repo(), &test_arch_1())
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .log(TEST_REPO, TEST_ARCH_1)
         .stream(Default::default())
         .unwrap();
 
@@ -574,9 +561,9 @@ async fn test_build_logs() {
     assert!(stream.next().await.is_none());
 
     let mut stream = obs
-        .project(test_project())
-        .package(test_package_1())
-        .log(&test_repo(), &test_arch_1())
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .log(TEST_REPO, TEST_ARCH_1)
         .stream(PackageLogStreamOptions {
             offset: Some(4),
             end: Some(11),
