@@ -31,6 +31,62 @@ fn create_authenticated_client(mock: ObsMock) -> Client {
 }
 
 #[tokio::test]
+async fn test_source_history() {
+    let srcmd5 = random_md5();
+    let time = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
+
+    let mock = start_mock().await;
+    mock.add_project(TEST_PROJECT.to_owned());
+
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_1.to_owned(),
+        MockPackageOptions::default(),
+    );
+
+    let obs = create_authenticated_client(mock.clone());
+
+    let revisions = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .revisions()
+        .await
+        .unwrap();
+    assert_eq!(revisions.revisions.len(), 0);
+
+    mock.add_package_revision(
+        TEST_PROJECT,
+        TEST_PACKAGE_1,
+        MockRevisionOptions {
+            comment: None,
+            srcmd5: srcmd5.clone(),
+            time,
+            user: ADMIN_USER.to_owned(),
+            version: Some("version".to_owned()),
+        },
+        HashMap::new(),
+    );
+
+    let revisions = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .revisions()
+        .await
+        .unwrap();
+
+    assert_eq!(revisions.revisions.len(), 1);
+
+    let rev = &revisions.revisions[0];
+    assert_eq!(rev.comment, None);
+    assert_eq!(rev.rev, "1");
+    assert_eq!(rev.vrev, "1");
+    assert_eq!(rev.version, "version");
+    assert_eq!(rev.srcmd5, srcmd5);
+    assert_eq!(rev.time, 10);
+    assert_eq!(rev.user, ADMIN_USER);
+}
+
+#[tokio::test]
 async fn test_source_list() {
     let mock = start_mock().await;
     mock.add_project(TEST_PROJECT.to_owned());

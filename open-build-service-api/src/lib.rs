@@ -171,6 +171,23 @@ pub struct Directory {
     pub linkinfo: Vec<LinkInfo>,
 }
 
+#[derive(Clone, Deserialize, Debug)]
+pub struct Revision {
+    pub rev: String,
+    pub vrev: String,
+    pub srcmd5: String,
+    pub version: String,
+    pub time: u64,
+    pub user: String,
+    pub comment: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct RevisionList {
+    #[serde(default, rename = "revision")]
+    pub revisions: Vec<Revision>,
+}
+
 #[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct CommitEntry {
     pub name: String,
@@ -500,6 +517,17 @@ impl<'a> PackageBuilder<'a> {
 
         self.upload_file("_meta", None, "<package/>").await?;
         Ok(())
+    }
+
+    pub async fn revisions(&self) -> Result<RevisionList> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push(&self.package)
+            .push("_history");
+        self.client.request(u).await
     }
 
     fn list_url(&self, rev: Option<&str>) -> Result<reqwest::Url> {

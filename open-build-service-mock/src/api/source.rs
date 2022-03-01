@@ -86,6 +86,91 @@ fn parse_xml_request<T: DeserializeOwned>(request: &Request) -> Result<T, ApiErr
         .map_err(|e| ApiError::new(StatusCode::BadRequest, "400".to_string(), e.to_string()))
 }
 
+pub(crate) struct PackageSourceHistoryResponder {
+    mock: ObsMock,
+}
+
+impl PackageSourceHistoryResponder {
+    pub fn new(mock: ObsMock) -> Self {
+        Self { mock }
+    }
+}
+
+impl Respond for PackageSourceHistoryResponder {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        let mut components = request.url.path_segments().unwrap();
+        let package_name = components.nth_back(1).unwrap();
+        let project_name = components.nth_back(0).unwrap();
+
+        let projects = self.mock.projects().read().unwrap();
+        let project = try_api!(projects
+            .get(project_name)
+            .ok_or_else(|| unknown_project(project_name.to_owned())));
+
+        let package = try_api!(project
+            .packages
+            .get(package_name)
+            .ok_or_else(|| unknown_package(package_name.to_owned())));
+
+        let mut xml = XMLElement::new("revisionlist");
+        for (rev_id, revision) in package.revisions.iter().enumerate() {
+            // SAFETY: non-meta revisions should always have `vrev` set,
+            // otherwise it's a bug.
+            let vrev = revision.vrev.unwrap();
+
+            let mut revision_xml = XMLElement::new("revision");
+            revision_xml.add_attribute("rev", &(rev_id + 1).to_string());
+            revision_xml.add_attribute("vrev", &vrev.to_string());
+
+            let mut srcmd5_xml = XMLElement::new("srcmd5");
+            srcmd5_xml
+                .add_text(revision.options.srcmd5.clone())
+                .unwrap();
+            revision_xml.add_child(srcmd5_xml).unwrap();
+
+            let mut version_xml = XMLElement::new("version");
+            version_xml
+                .add_text(
+                    revision
+                        .options
+                        .version
+                        .clone()
+                        .unwrap_or_else(|| "unknown".to_owned()),
+                )
+                .unwrap();
+            revision_xml.add_child(version_xml).unwrap();
+
+            let mut time_xml = XMLElement::new("time");
+            time_xml
+                .add_text(
+                    revision
+                        .options
+                        .time
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs()
+                        .to_string(),
+                )
+                .unwrap();
+            revision_xml.add_child(time_xml).unwrap();
+
+            let mut user_xml = XMLElement::new("user");
+            user_xml.add_text(revision.options.user.clone()).unwrap();
+            revision_xml.add_child(user_xml).unwrap();
+
+            if let Some(comment) = &revision.options.comment {
+                let mut comment_xml = XMLElement::new("comment");
+                comment_xml.add_text(comment.clone()).unwrap();
+                revision_xml.add_child(comment_xml).unwrap();
+            }
+
+            xml.add_child(revision_xml).unwrap();
+        }
+
+        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+    }
+}
+
 pub(crate) struct PackageSourceListingResponder {
     mock: ObsMock,
 }
