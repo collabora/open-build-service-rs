@@ -7,8 +7,8 @@ use std::{
 
 use api::{
     ArchListingResponder, BuildLogResponder, BuildPackageStatusResponder, BuildResultsResponder,
-    PackageSourceCommandResponder, PackageSourceFileResponder, PackageSourceListingResponder,
-    PackageSourcePlacementResponder, RepoListingResponder,
+    PackageSourceCommandResponder, PackageSourceFileResponder, PackageSourceHistoryResponder,
+    PackageSourceListingResponder, PackageSourcePlacementResponder, RepoListingResponder,
 };
 
 use http_types::auth::BasicAuth;
@@ -384,6 +384,12 @@ impl ObsMock {
         Mock::given(method("POST"))
             .and(path_regex("^/source/[^/]+/[^/]+$"))
             .respond_with(PackageSourceCommandResponder::new(server.clone()))
+            .mount(&server.inner.server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path_regex("^/source/[^/]+/[^/]+/_history$"))
+            .respond_with(PackageSourceHistoryResponder::new(server.clone()))
             .mount(&server.inner.server)
             .await;
 
