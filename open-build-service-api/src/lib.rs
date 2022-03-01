@@ -254,6 +254,11 @@ impl CommitFileList {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct CommitOptions {
+    pub comment: Option<String>,
+}
+
 #[derive(Deserialize, Debug)]
 pub struct ResultListResult {
     pub project: String,
@@ -584,7 +589,11 @@ impl<'a> PackageBuilder<'a> {
         Ok(())
     }
 
-    pub async fn commit(&self, filelist: &CommitFileList) -> Result<CommitResult> {
+    pub async fn commit(
+        &self,
+        filelist: &CommitFileList,
+        options: &CommitOptions,
+    ) -> Result<CommitResult> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
             .map_err(|_| Error::InvalidUrl)?
@@ -592,6 +601,10 @@ impl<'a> PackageBuilder<'a> {
             .push(&self.project)
             .push(&self.package);
         u.query_pairs_mut().append_pair("cmd", "commitfilelist");
+
+        if let Some(comment) = &options.comment {
+            u.query_pairs_mut().append_pair("comment", comment);
+        }
 
         let mut body = Vec::new();
         quick_xml::se::to_writer(&mut body, filelist)?;

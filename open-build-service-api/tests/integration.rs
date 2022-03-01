@@ -315,7 +315,7 @@ async fn test_commits() {
     let commit_result = obs
         .project(TEST_PROJECT.to_owned())
         .package(TEST_PACKAGE_1.to_owned())
-        .commit(&file_list)
+        .commit(&file_list, &CommitOptions::default())
         .await
         .unwrap();
     if let CommitResult::MissingEntries(missing) = commit_result {
@@ -335,7 +335,12 @@ async fn test_commits() {
     let commit_result = obs
         .project(TEST_PROJECT.to_owned())
         .package(TEST_PACKAGE_1.to_owned())
-        .commit(&file_list)
+        .commit(
+            &file_list,
+            &CommitOptions {
+                comment: Some("test comment".to_owned()),
+            },
+        )
         .await
         .unwrap();
     if let CommitResult::Success(directory) = commit_result {
@@ -355,6 +360,17 @@ async fn test_commits() {
     assert_eq!(directory.entries.len(), 1);
     assert_eq!(directory.entries[0].name, test_entry.name);
     assert_eq!(directory.entries[0].md5, test_entry.md5);
+
+    let revisions = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .revisions()
+        .await
+        .unwrap();
+    assert_eq!(
+        revisions.revisions.last().unwrap().comment.as_deref(),
+        Some("test comment")
+    );
 }
 
 fn get_results_by_arch(mut results: ResultList) -> (ResultListResult, ResultListResult) {
