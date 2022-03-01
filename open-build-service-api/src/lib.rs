@@ -284,6 +284,19 @@ pub struct ResultList {
     pub results: Vec<ResultListResult>,
 }
 
+#[derive(Clone, Deserialize, Debug)]
+pub struct Binary {
+    pub filename: String,
+    pub size: u64,
+    pub mtime: u64,
+}
+
+#[derive(Clone, Deserialize, Debug)]
+pub struct BinaryList {
+    #[serde(default, rename = "binary")]
+    pub binaries: Vec<Binary>,
+}
+
 #[derive(Deserialize, Debug)]
 struct RepoDirectoryEntry {
     pub name: String,
@@ -437,18 +450,20 @@ impl<'a> PackageLog<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum BuildCommand {
+enum BuildCommand<'b> {
     JobStatus,
     History,
     Status,
+    DownloadBinary(&'b str),
 }
 
-impl AsRef<str> for BuildCommand {
+impl AsRef<str> for BuildCommand<'_> {
     fn as_ref(&self) -> &str {
         match self {
             BuildCommand::JobStatus => "_jobstatus",
             BuildCommand::History => "_history",
             BuildCommand::Status => "_status",
+            BuildCommand::DownloadBinary(binary) => binary,
         }
     }
 }
@@ -461,16 +476,28 @@ pub struct PackageBuilder<'a> {
 }
 
 impl<'a> PackageBuilder<'a> {
-    fn full_request(&self, repository: &str, arch: &str, command: BuildCommand) -> Result<Url> {
+    fn full_request(
+        &self,
+        repository: &str,
+        arch: &str,
+        command: Option<BuildCommand<'_>>,
+    ) -> Result<Url> {
         let mut u = self.client.base.clone();
-        u.path_segments_mut()
-            .map_err(|_| Error::InvalidUrl)?
-            .push("build")
-            .push(&self.project)
-            .push(repository)
-            .push(arch)
-            .push(&self.package)
-            .push(command.as_ref());
+
+        {
+            let mut path = u.path_segments_mut().map_err(|_| Error::InvalidUrl)?;
+
+            path.push("build")
+                .push(&self.project)
+                .push(repository)
+                .push(arch)
+                .push(&self.package);
+
+            if let Some(command) = command {
+                path.push(command.as_ref());
+            }
+        }
+
         Ok(u)
     }
 
@@ -504,17 +531,37 @@ impl<'a> PackageBuilder<'a> {
     }
 
     pub async fn jobstatus(&self, repository: &str, arch: &str) -> Result<JobStatus> {
-        let u = self.full_request(repository, arch, BuildCommand::JobStatus)?;
+        let u = self.full_request(repository, arch, Some(BuildCommand::JobStatus))?;
         self.client.request(u).await
     }
 
     pub async fn history(&self, repository: &str, arch: &str) -> Result<BuildHistory> {
-        let u = self.full_request(repository, arch, BuildCommand::History)?;
+        let u = self.full_request(repository, arch, Some(BuildCommand::History))?;
         self.client.request(u).await
     }
 
     pub async fn status(&self, repository: &str, arch: &str) -> Result<BuildStatus> {
-        let u = self.full_request(repository, arch, BuildCommand::Status)?;
+        let u = self.full_request(repository, arch, Some(BuildCommand::Status))?;
+        self.client.request(u).await
+    }
+
+    pub async fn binary_file(
+        &self,
+        repository: &str,
+        arch: &str,
+        file: &str,
+    ) -> Result<impl Stream<Item = Result<Bytes>>> {
+        let u = self.full_request(repository, arch, Some(BuildCommand::DownloadBinary(file)))?;
+        Ok(
+            Client::send_with_error(self.client.authenticated_request(Method::GET, u))
+                .await?
+                .bytes_stream()
+                .map_err(|e| e.into()),
+        )
+    }
+
+    pub async fn binaries(&self, repository: &str, arch: &str) -> Result<BinaryList> {
+        let u = self.full_request(repository, arch, None)?;
         self.client.request(u).await
     }
 
