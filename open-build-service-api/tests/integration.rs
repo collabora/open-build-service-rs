@@ -523,6 +523,89 @@ async fn test_build_results() {
 }
 
 #[tokio::test]
+async fn test_build_binaries() {
+    let test_file = "test";
+    let test_contents = b"abc 123";
+    let test_mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
+
+    let mock = start_mock().await;
+
+    mock.add_project(TEST_PROJECT.to_owned());
+    mock.add_or_update_repository(
+        TEST_PROJECT,
+        TEST_REPO.to_owned(),
+        TEST_ARCH_1.to_owned(),
+        MockRepositoryCode::Finished,
+    );
+
+    mock.set_package_binaries(
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        TEST_PACKAGE_1.to_owned(),
+        HashMap::new(),
+    );
+
+    let obs = create_authenticated_client(mock.clone());
+
+    let binaries = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .binaries(TEST_REPO, TEST_ARCH_1)
+        .await
+        .unwrap();
+    assert_eq!(binaries.binaries.len(), 0);
+
+    mock.set_package_binaries(
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        TEST_PACKAGE_1.to_owned(),
+        [(
+            test_file.to_owned(),
+            MockBinary {
+                contents: test_contents.to_vec(),
+                mtime: test_mtime.clone(),
+            },
+        )]
+        .into(),
+    );
+
+    let binaries = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .binaries(TEST_REPO, TEST_ARCH_1)
+        .await
+        .unwrap();
+    assert_eq!(binaries.binaries.len(), 1);
+
+    assert_eq!(binaries.binaries[0].filename, test_file);
+    assert_eq!(binaries.binaries[0].size, test_contents.len() as u64);
+    assert_eq!(
+        binaries.binaries[0].mtime,
+        test_mtime
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    );
+
+    let mut data = Vec::new();
+    obs.project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .binary_file(TEST_REPO, TEST_ARCH_1, test_file)
+        .await
+        .unwrap()
+        .try_for_each(|chunk| {
+            data.extend_from_slice(&chunk);
+            futures::future::ready(Ok(()))
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(&data[..], test_contents);
+}
+
+#[tokio::test]
 async fn test_build_status() {
     let mock = start_mock().await;
 

@@ -6,9 +6,10 @@ use std::{
 };
 
 use api::{
-    ArchListingResponder, BuildLogResponder, BuildPackageStatusResponder, BuildResultsResponder,
-    PackageSourceCommandResponder, PackageSourceFileResponder, PackageSourceHistoryResponder,
-    PackageSourceListingResponder, PackageSourcePlacementResponder, RepoListingResponder,
+    ArchListingResponder, BuildBinaryFileResponder, BuildBinaryListResponder, BuildLogResponder,
+    BuildPackageStatusResponder, BuildResultsResponder, PackageSourceCommandResponder,
+    PackageSourceFileResponder, PackageSourceHistoryResponder, PackageSourceListingResponder,
+    PackageSourcePlacementResponder, RepoListingResponder,
 };
 
 use http_types::auth::BasicAuth;
@@ -301,6 +302,11 @@ impl MockBuildStatus {
     }
 }
 
+pub struct MockBinary {
+    pub contents: Vec<u8>,
+    pub mtime: SystemTime,
+}
+
 #[derive(Clone)]
 pub struct MockBuildLog {
     pub contents: String,
@@ -321,6 +327,8 @@ impl MockBuildLog {
 #[derive(Default)]
 struct MockRepositoryPackage {
     status: MockBuildStatus,
+
+    binaries: HashMap<String, MockBinary>,
 
     latest_log: Option<MockBuildLog>,
     latest_successful_log: Option<MockBuildLog>,
@@ -424,6 +432,12 @@ impl ObsMock {
             .await;
 
         Mock::given(method("GET"))
+            .and(path_regex("^/build/[^/]+/[^/]+/[^/]+/[^/]+$"))
+            .respond_with(BuildBinaryListResponder::new(server.clone()))
+            .mount(&server.inner.server)
+            .await;
+
+        Mock::given(method("GET"))
             .and(path_regex("^/build/[^/]+/[^/]+/[^/]+/[^/]+/_log$"))
             .respond_with(BuildLogResponder::new(server.clone()))
             .mount(&server.inner.server)
@@ -432,6 +446,12 @@ impl ObsMock {
         Mock::given(method("GET"))
             .and(path_regex("^/build/[^/]+/[^/]+/[^/]+/[^/]+/_status$"))
             .respond_with(BuildPackageStatusResponder::new(server.clone()))
+            .mount(&server.inner.server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path_regex("^/build/[^/]+/[^/]+/[^/]+/[^/]+/[^/]+$"))
+            .respond_with(BuildBinaryFileResponder::new(server.clone()))
             .mount(&server.inner.server)
             .await;
 
@@ -623,6 +643,19 @@ impl ObsMock {
     ) {
         self.with_repo_package(project_name, repo_name, arch, package_name, |package| {
             package.status = status;
+        });
+    }
+
+    pub fn set_package_binaries(
+        &self,
+        project_name: &str,
+        repo_name: &str,
+        arch: &str,
+        package_name: String,
+        binaries: HashMap<String, MockBinary>,
+    ) {
+        self.with_repo_package(project_name, repo_name, arch, package_name, |package| {
+            package.binaries = binaries;
         });
     }
 

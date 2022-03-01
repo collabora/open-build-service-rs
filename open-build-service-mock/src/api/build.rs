@@ -194,6 +194,115 @@ impl Respond for BuildResultsResponder {
     }
 }
 
+pub(crate) struct BuildBinaryListResponder {
+    mock: ObsMock,
+}
+
+impl BuildBinaryListResponder {
+    pub fn new(mock: ObsMock) -> BuildBinaryListResponder {
+        BuildBinaryListResponder { mock }
+    }
+}
+
+impl Respond for BuildBinaryListResponder {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        try_api!(check_auth(self.mock.auth(), request));
+
+        let mut components = request.url.path_segments().unwrap();
+        let package_name = components.nth_back(0).unwrap();
+        let arch = components.nth_back(0).unwrap();
+        let repo_name = components.nth_back(0).unwrap();
+        let project_name = components.nth_back(0).unwrap();
+
+        let projects = self.mock.projects().read().unwrap();
+
+        let project = try_api!(projects
+            .get(project_name)
+            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let arches = try_api!(project
+            .repos
+            .get(repo_name)
+            .ok_or_else(|| unknown_repo(project_name, repo_name)));
+        let arch =
+            try_api!(arches
+                .get(arch)
+                .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
+        let package = try_api!(arch
+            .packages
+            .get(package_name)
+            .ok_or_else(|| unknown_package(package_name)));
+
+        let mut xml = XMLElement::new("binarylist");
+        for (name, binary) in &package.binaries {
+            let mut binary_xml = XMLElement::new("binary");
+            binary_xml.add_attribute("filename", name);
+            binary_xml.add_attribute("size", &binary.contents.len().to_string());
+            binary_xml.add_attribute(
+                "mtime",
+                &binary
+                    .mtime
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+                    .to_string(),
+            );
+
+            xml.add_child(binary_xml).unwrap();
+        }
+
+        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+    }
+}
+
+pub(crate) struct BuildBinaryFileResponder {
+    mock: ObsMock,
+}
+
+impl BuildBinaryFileResponder {
+    pub fn new(mock: ObsMock) -> BuildBinaryFileResponder {
+        BuildBinaryFileResponder { mock }
+    }
+}
+
+impl Respond for BuildBinaryFileResponder {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        try_api!(check_auth(self.mock.auth(), request));
+
+        let mut components = request.url.path_segments().unwrap();
+        let file_name = components.nth_back(0).unwrap();
+        let package_name = components.nth_back(0).unwrap();
+        let arch = components.nth_back(0).unwrap();
+        let repo_name = components.nth_back(0).unwrap();
+        let project_name = components.nth_back(0).unwrap();
+
+        let projects = self.mock.projects().read().unwrap();
+
+        let project = try_api!(projects
+            .get(project_name)
+            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let arches = try_api!(project
+            .repos
+            .get(repo_name)
+            .ok_or_else(|| unknown_repo(project_name, repo_name)));
+        let arch =
+            try_api!(arches
+                .get(arch)
+                .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
+        let package = try_api!(arch
+            .packages
+            .get(package_name)
+            .ok_or_else(|| unknown_package(package_name)));
+
+        let file = try_api!(package.binaries.get(file_name).ok_or_else(|| ApiError::new(
+            StatusCode::NotFound,
+            "404".to_owned(),
+            format!("{}: No such file or directory", file_name)
+        )));
+        ResponseTemplate::new(StatusCode::Ok)
+            .set_body_raw(file.contents.clone(), "application/octet-stream")
+    }
+}
+
 pub(crate) struct BuildPackageStatusResponder {
     mock: ObsMock,
 }
