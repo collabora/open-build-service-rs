@@ -48,6 +48,39 @@ impl std::fmt::Display for ApiError {
 
 type Result<T> = std::result::Result<T, Error>;
 
+#[derive(Clone, Copy, Deserialize, Debug, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum RebuildMode {
+    Transitive,
+    Direct,
+    Local,
+}
+
+#[derive(Clone, Copy, Deserialize, Debug, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum BlockMode {
+    All,
+    Local,
+    Never,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct RepositoryMeta {
+    pub name: String,
+    pub rebuild: RebuildMode,
+    pub block: BlockMode,
+
+    #[serde(default, rename = "arch")]
+    pub arches: Vec<String>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ProjectMeta {
+    pub name: String,
+    #[serde(default, rename = "repository")]
+    pub repositories: Vec<RepositoryMeta>,
+}
+
 #[derive(Copy, Clone, Deserialize, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RepositoryCode {
@@ -846,6 +879,16 @@ impl<'a> ProjectBuilder<'a> {
             project: self.project,
             package,
         }
+    }
+
+    pub async fn meta(&self) -> Result<ProjectMeta> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push("_meta");
+        self.client.request(u).await
     }
 
     pub async fn result(&self) -> Result<ResultList> {

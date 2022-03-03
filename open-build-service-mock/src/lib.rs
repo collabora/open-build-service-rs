@@ -9,7 +9,7 @@ use api::{
     ArchListingResponder, BuildBinaryFileResponder, BuildBinaryListResponder, BuildLogResponder,
     BuildPackageStatusResponder, BuildResultsResponder, PackageSourceCommandResponder,
     PackageSourceFileResponder, PackageSourceHistoryResponder, PackageSourceListingResponder,
-    PackageSourcePlacementResponder, RepoListingResponder,
+    PackageSourcePlacementResponder, ProjectMetaResponder, RepoListingResponder,
 };
 
 use http_types::auth::BasicAuth;
@@ -415,10 +415,41 @@ struct MockRepository {
     packages: HashMap<String, MockRepositoryPackage>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Display)]
+#[strum(serialize_all = "snake_case")]
+pub enum MockRebuildMode {
+    Transitive,
+    Direct,
+    Local,
+}
+
+impl Default for MockRebuildMode {
+    fn default() -> Self {
+        MockRebuildMode::Transitive
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Display)]
+#[strum(serialize_all = "snake_case")]
+pub enum MockBlockMode {
+    All,
+    Local,
+    Never,
+}
+
+impl Default for MockBlockMode {
+    fn default() -> Self {
+        MockBlockMode::All
+    }
+}
+
 #[derive(Default)]
 struct MockProject {
     packages: HashMap<String, MockPackage>,
     repos: HashMap<String, ArchMap<MockRepository>>,
+
+    rebuild: MockRebuildMode,
+    block: MockBlockMode,
 }
 
 type ProjectMap = HashMap<String, MockProject>;
@@ -458,6 +489,12 @@ impl ObsMock {
         let server = Self {
             inner: Arc::new(inner),
         };
+
+        Mock::given(method("GET"))
+            .and(path_regex("^/source/[^/]+/_meta$"))
+            .respond_with(ProjectMetaResponder::new(server.clone()))
+            .mount(&server.inner.server)
+            .await;
 
         Mock::given(method("GET"))
             .and(path_regex("^/source/[^/]+/[^/]+$"))
@@ -549,6 +586,18 @@ impl ObsMock {
     pub fn add_project(&self, project_name: String) {
         let mut projects = self.inner.projects.write().unwrap();
         projects.entry(project_name).or_default();
+    }
+
+    pub fn set_project_modes(
+        &self,
+        project_name: &str,
+        rebuild: MockRebuildMode,
+        block: MockBlockMode,
+    ) {
+        let mut projects = self.inner.projects.write().unwrap();
+        let project = get_project(&mut *projects, project_name);
+        project.rebuild = rebuild;
+        project.block = block;
     }
 
     pub fn add_new_package(

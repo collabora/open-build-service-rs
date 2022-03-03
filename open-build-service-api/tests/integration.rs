@@ -31,6 +31,35 @@ fn create_authenticated_client(mock: ObsMock) -> Client {
 }
 
 #[tokio::test]
+async fn test_project_meta() {
+    let mock = start_mock().await;
+    mock.add_project(TEST_PROJECT.to_owned());
+
+    let obs = create_authenticated_client(mock.clone());
+
+    let meta = obs.project(TEST_PROJECT.to_owned()).meta().await.unwrap();
+    assert_eq!(meta.name, TEST_PROJECT);
+    assert_eq!(meta.repositories.len(), 0);
+
+    mock.set_project_modes(TEST_PROJECT, MockRebuildMode::Direct, MockBlockMode::Never);
+    mock.add_or_update_repository(
+        TEST_PROJECT,
+        TEST_REPO.to_owned(),
+        TEST_ARCH_1.to_owned(),
+        MockRepositoryCode::Unknown,
+    );
+
+    let meta = obs.project(TEST_PROJECT.to_owned()).meta().await.unwrap();
+    assert_eq!(meta.name, TEST_PROJECT);
+    assert_eq!(meta.repositories.len(), 1);
+    assert_eq!(meta.repositories[0].name, TEST_REPO);
+    assert_eq!(meta.repositories[0].rebuild, RebuildMode::Direct);
+    assert_eq!(meta.repositories[0].block, BlockMode::Never);
+    assert_eq!(meta.repositories[0].arches.len(), 1);
+    assert_eq!(meta.repositories[0].arches[0], TEST_ARCH_1);
+}
+
+#[tokio::test]
 async fn test_source_history() {
     let srcmd5 = random_md5();
     let time = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
