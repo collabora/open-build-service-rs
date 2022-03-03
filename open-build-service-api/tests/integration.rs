@@ -412,6 +412,17 @@ async fn test_branch() {
 
     let mock = start_mock().await;
     mock.add_project(TEST_PROJECT.to_owned());
+    mock.set_project_modes(
+        TEST_PROJECT,
+        MockRebuildMode::Transitive,
+        MockBlockMode::All,
+    );
+    mock.add_or_update_repository(
+        TEST_PROJECT,
+        TEST_REPO.to_owned(),
+        TEST_ARCH_1.to_owned(),
+        MockRepositoryCode::Finished,
+    );
 
     mock.add_new_package(
         TEST_PROJECT,
@@ -463,6 +474,16 @@ async fn test_branch() {
     assert_eq!(dir.linkinfo[0].package, TEST_PACKAGE_1);
     assert!(!dir.linkinfo[0].missingok);
 
+    let meta = obs
+        .project(test_project_branched_1.clone())
+        .meta()
+        .await
+        .unwrap();
+    assert_eq!(meta.repositories.len(), 1);
+    assert_eq!(meta.repositories[0].name, TEST_REPO);
+    assert_eq!(meta.repositories[0].rebuild, RebuildMode::Transitive);
+    assert_eq!(meta.repositories[0].block, BlockMode::All);
+
     let err = obs
         .project(TEST_PROJECT.to_owned())
         .package(TEST_PACKAGE_1.to_owned())
@@ -493,6 +514,8 @@ async fn test_branch() {
         .package(TEST_PACKAGE_1.to_owned())
         .branch(&BranchOptions {
             target_project: Some(test_project_branched_2.clone()),
+            add_repositories_rebuild: Some(RebuildMode::Local),
+            add_repositories_block: Some(BlockMode::Never),
             ..Default::default()
         })
         .await
@@ -512,6 +535,16 @@ async fn test_branch() {
     assert_eq!(dir.linkinfo[0].project, TEST_PROJECT);
     assert_eq!(dir.linkinfo[0].package, TEST_PACKAGE_1);
     assert!(!dir.linkinfo[0].missingok);
+
+    let meta = obs
+        .project(test_project_branched_2.clone())
+        .meta()
+        .await
+        .unwrap();
+    assert_eq!(meta.repositories.len(), 1);
+    assert_eq!(meta.repositories[0].name, TEST_REPO);
+    assert_eq!(meta.repositories[0].rebuild, RebuildMode::Local);
+    assert_eq!(meta.repositories[0].block, BlockMode::Never);
 
     let status = obs
         .project(TEST_PROJECT.to_owned())

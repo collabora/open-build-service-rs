@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::convert::{TryFrom, TryInto};
 use std::io::BufReader;
 use std::time::SystemTime;
 
@@ -566,6 +567,23 @@ fn branch_data_xml(name: &str, value: String) -> XMLElement {
     xml
 }
 
+fn project_meta_enum_error() -> ApiError {
+    ApiError::new(
+        StatusCode::BadRequest,
+        "invalid_argument".to_owned(),
+        "Internal Server Error".to_owned(),
+    )
+}
+
+fn parse_project_meta_enum_param<T>(request: &Request, name: &str) -> Result<Option<T>, ApiError>
+where
+    for<'a> T: TryFrom<&'a str>,
+{
+    find_query_param(request, name)
+        .map(|v| v.as_ref().try_into().map_err(|_| project_meta_enum_error()))
+        .transpose()
+}
+
 fn do_branch(
     request: &Request,
     origin_project_name: &str,
@@ -586,12 +604,26 @@ fn do_branch(
     let force = find_query_param(request, "force").is_some();
     let missingok = find_query_param(request, "missingok").is_some();
 
+    let rebuild = try_api!(parse_project_meta_enum_param(
+        request,
+        "add_repositories_rebuild"
+    ))
+    .unwrap_or_default();
+    let block = try_api!(parse_project_meta_enum_param(
+        request,
+        "add_repositories_block"
+    ))
+    .unwrap_or_default();
+
     let origin = projects.get_mut(origin_project_name);
     ensure!(
         origin.is_some() || missingok,
         unknown_project(origin_project_name.to_owned())
     );
 
+    let origin_repos = origin
+        .as_ref()
+        .map_or_else(HashMap::new, |origin| origin.repos.clone());
     let origin_package = origin.and_then(|project| project.packages.get_mut(origin_package_name));
 
     match (origin_package.is_some(), missingok) {
@@ -632,7 +664,12 @@ fn do_branch(
 
     let target_project = projects
         .entry(target_project_name.clone().into_owned())
-        .or_default();
+        .or_insert_with(|| MockProject {
+            repos: origin_repos,
+            rebuild,
+            block,
+            ..Default::default()
+        });
 
     ensure!(
         force
