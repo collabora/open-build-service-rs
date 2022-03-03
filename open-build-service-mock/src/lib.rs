@@ -363,7 +363,7 @@ impl Default for MockBranchOptions {
 
 type ArchMap<Value> = HashMap<String, Value>;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct MockBuildStatus {
     pub code: MockPackageCode,
     pub dirty: bool,
@@ -378,6 +378,7 @@ impl MockBuildStatus {
     }
 }
 
+#[derive(Clone)]
 pub struct MockBinary {
     pub contents: Vec<u8>,
     pub mtime: SystemTime,
@@ -400,7 +401,7 @@ impl MockBuildLog {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct MockRepositoryPackage {
     status: MockBuildStatus,
 
@@ -410,12 +411,13 @@ struct MockRepositoryPackage {
     latest_successful_log: Option<MockBuildLog>,
 }
 
+#[derive(Clone)]
 struct MockRepository {
     code: MockRepositoryCode,
     packages: HashMap<String, MockRepositoryPackage>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Display)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Display, EnumString)]
 #[strum(serialize_all = "snake_case")]
 pub enum MockRebuildMode {
     Transitive,
@@ -429,7 +431,7 @@ impl Default for MockRebuildMode {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Display)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Display, EnumString)]
 #[strum(serialize_all = "snake_case")]
 pub enum MockBlockMode {
     All,

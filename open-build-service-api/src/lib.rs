@@ -11,6 +11,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use strum_macros::Display;
 use thiserror::Error;
 use url::Url;
 
@@ -48,16 +49,18 @@ impl std::fmt::Display for ApiError {
 
 type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Clone, Copy, Deserialize, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Deserialize, Debug, Eq, PartialEq, Display)]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 pub enum RebuildMode {
     Transitive,
     Direct,
     Local,
 }
 
-#[derive(Clone, Copy, Deserialize, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Deserialize, Debug, Eq, PartialEq, Display)]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 pub enum BlockMode {
     All,
     Local,
@@ -303,6 +306,9 @@ pub struct BranchOptions {
     pub comment: Option<String>,
     pub force: bool,
     pub missingok: bool,
+
+    pub add_repositories_rebuild: Option<RebuildMode>,
+    pub add_repositories_block: Option<BlockMode>,
 }
 
 #[derive(Clone, Debug)]
@@ -842,6 +848,16 @@ impl<'a> PackageBuilder<'a> {
 
         if let Some(comment) = &options.comment {
             u.query_pairs_mut().append_pair("comment", comment);
+        }
+
+        if let Some(rebuild) = &options.add_repositories_rebuild {
+            u.query_pairs_mut()
+                .append_pair("add_repositories_rebuild", &rebuild.to_string());
+        }
+
+        if let Some(block) = &options.add_repositories_block {
+            u.query_pairs_mut()
+                .append_pair("add_repositories_block", &block.to_string());
         }
 
         if options.force {
