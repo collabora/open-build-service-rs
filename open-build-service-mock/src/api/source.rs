@@ -90,6 +90,55 @@ fn parse_xml_request<T: DeserializeOwned>(request: &Request) -> Result<T, ApiErr
         .map_err(|e| ApiError::new(StatusCode::BadRequest, "400".to_string(), e.to_string()))
 }
 
+pub(crate) struct ProjectMetaResponder {
+    mock: ObsMock,
+}
+
+impl ProjectMetaResponder {
+    pub fn new(mock: ObsMock) -> Self {
+        Self { mock }
+    }
+}
+
+impl Respond for ProjectMetaResponder {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        let mut components = request.url.path_segments().unwrap();
+        let project_name = components.nth_back(1).unwrap();
+
+        let projects = self.mock.projects().read().unwrap();
+        let project = try_api!(projects
+            .get(project_name)
+            .ok_or_else(|| unknown_project(project_name.to_owned())));
+
+        let mut xml = XMLElement::new("project");
+        xml.add_attribute("name", project_name);
+
+        for (repo, arches) in &project.repos {
+            let mut repository_xml = XMLElement::new("repository");
+            repository_xml.add_attribute("name", repo);
+            repository_xml.add_attribute("rebuild", &project.rebuild.to_string());
+            repository_xml.add_attribute("block", &project.block.to_string());
+
+            let mut path_xml = XMLElement::new("path");
+            path_xml.add_attribute("project", project_name);
+            path_xml.add_attribute("repository", repo);
+
+            repository_xml.add_child(path_xml).unwrap();
+
+            for arch in arches.keys() {
+                let mut arch_xml = XMLElement::new("arch");
+                arch_xml.add_text(arch.clone()).unwrap();
+
+                repository_xml.add_child(arch_xml).unwrap();
+            }
+
+            xml.add_child(repository_xml).unwrap();
+        }
+
+        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+    }
+}
+
 pub(crate) struct PackageSourceHistoryResponder {
     mock: ObsMock,
 }
