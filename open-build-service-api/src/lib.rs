@@ -6,7 +6,9 @@ use futures::stream::BoxStream;
 use md5::{Digest, Md5};
 use quick_xml::{de::DeError, events::Event};
 use reqwest::{header::CONTENT_TYPE, Body, Method, RequestBuilder, Response};
+use serde::de::IntoDeserializer;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::collections::HashMap;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use thiserror::Error;
@@ -145,6 +147,8 @@ pub struct LinkInfo {
     pub srcmd5: String,
     pub xsrcmd5: String,
     pub lsrcmd5: String,
+    #[serde(default)]
+    pub missingok: bool,
 }
 
 #[derive(Deserialize, Debug)]
@@ -257,6 +261,64 @@ impl CommitFileList {
 #[derive(Clone, Debug, Default)]
 pub struct CommitOptions {
     pub comment: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct BranchOptions {
+    pub target_project: Option<String>,
+    pub target_package: Option<String>,
+    pub comment: Option<String>,
+    pub force: bool,
+    pub missingok: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct BranchStatus {
+    pub source_project: String,
+    pub source_package: String,
+    pub target_project: String,
+    pub target_package: String,
+}
+
+impl<'de> Deserialize<'de> for BranchStatus {
+    fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct BranchStatusDataItem {
+            name: String,
+            #[serde(rename = "$value")]
+            value: String,
+        }
+
+        #[derive(Deserialize)]
+        struct BranchStatusData {
+            data: Vec<BranchStatusDataItem>,
+        }
+
+        #[derive(Deserialize)]
+        struct BranchStatusExpanded {
+            sourceproject: String,
+            sourcepackage: String,
+            targetproject: String,
+            targetpackage: String,
+        }
+
+        let data: HashMap<String, String> = BranchStatusData::deserialize(deserializer)?
+            .data
+            .into_iter()
+            .map(|BranchStatusDataItem { name, value }| (name, value))
+            .collect();
+
+        let expanded = BranchStatusExpanded::deserialize(data.into_deserializer())?;
+        Ok(BranchStatus {
+            source_project: expanded.sourceproject,
+            source_package: expanded.sourcepackage,
+            target_project: expanded.targetproject,
+            target_package: expanded.targetpackage,
+        })
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -726,6 +788,40 @@ impl<'a> PackageBuilder<'a> {
         }
     }
 
+    pub async fn branch(&self, options: &BranchOptions) -> Result<BranchStatus> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push(&self.package);
+        u.query_pairs_mut().append_pair("cmd", "branch");
+
+        if let Some(target_project) = &options.target_project {
+            u.query_pairs_mut()
+                .append_pair("target_project", target_project);
+        }
+
+        if let Some(target_package) = &options.target_package {
+            u.query_pairs_mut()
+                .append_pair("target_package", target_package);
+        }
+
+        if let Some(comment) = &options.comment {
+            u.query_pairs_mut().append_pair("comment", comment);
+        }
+
+        if options.force {
+            u.query_pairs_mut().append_pair("force", "1");
+        }
+
+        if options.missingok {
+            u.query_pairs_mut().append_pair("missingok", "1");
+        }
+
+        self.client.post_request(u).await
+    }
+
     pub async fn result(&self) -> Result<ResultList> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
@@ -861,6 +957,14 @@ impl Client {
 
     async fn request<T: DeserializeOwned + std::fmt::Debug>(&self, url: Url) -> Result<T> {
         let data = Self::send_with_error(self.authenticated_request(Method::GET, url))
+            .await?
+            .text()
+            .await?;
+        quick_xml::de::from_str(&data).map_err(|e| e.into())
+    }
+
+    async fn post_request<T: DeserializeOwned + std::fmt::Debug>(&self, url: Url) -> Result<T> {
+        let data = Self::send_with_error(self.authenticated_request(Method::POST, url))
             .await?
             .text()
             .await?;

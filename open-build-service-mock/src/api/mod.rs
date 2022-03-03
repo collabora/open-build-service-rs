@@ -10,9 +10,19 @@ pub(crate) use build::*;
 mod source;
 pub(crate) use source::*;
 
+fn build_status_xml(code: &str, summary: String) -> XMLElement {
+    let mut status_xml = XMLElement::new("status");
+    status_xml.add_attribute("code", code);
+
+    let mut summary_xml = XMLElement::new("summary");
+    summary_xml.add_text(summary).unwrap();
+
+    status_xml.add_child(summary_xml).unwrap();
+    status_xml
+}
+
 trait ResponseTemplateUtils {
     fn set_body_xml(self, xml: XMLElement) -> Self;
-    fn set_body_status_xml(self, code: &str, summary: String) -> Self;
 }
 
 impl ResponseTemplateUtils for ResponseTemplate {
@@ -20,17 +30,6 @@ impl ResponseTemplateUtils for ResponseTemplate {
         let mut body = vec![];
         xml.render(&mut body, false, true).unwrap();
         self.set_body_raw(body, "application/xml")
-    }
-
-    fn set_body_status_xml(self, code: &str, summary: String) -> Self {
-        let mut status_xml = XMLElement::new("status");
-        status_xml.add_attribute("code", code);
-
-        let mut summary_xml = XMLElement::new("summary");
-        summary_xml.add_text(summary).unwrap();
-
-        status_xml.add_child(summary_xml).unwrap();
-        self.set_body_xml(status_xml)
     }
 }
 
@@ -51,7 +50,8 @@ impl ApiError {
     }
 
     fn into_response(self) -> ResponseTemplate {
-        ResponseTemplate::new(self.http_status).set_body_status_xml(&self.code, self.summary)
+        ResponseTemplate::new(self.http_status)
+            .set_body_xml(build_status_xml(&self.code, self.summary))
     }
 }
 

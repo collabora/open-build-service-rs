@@ -9,8 +9,8 @@ use wiremock::{Request, Respond};
 use xml_builder::XMLElement;
 
 use crate::{
-    random_md5, MockEntry, MockPackage, MockPackageOptions, MockRevision, MockRevisionOptions,
-    MockSourceFile, MockSourceFileKey, ObsMock,
+    random_md5, MockBranchOptions, MockEntry, MockPackage, MockPackageOptions, MockProject,
+    MockRevision, MockRevisionOptions, MockSourceFile, MockSourceFileKey, ObsMock, ZERO_REV_SRCMD5,
 };
 
 use super::*;
@@ -51,6 +51,10 @@ fn source_listing_xml(
         link_xml.add_attribute("srcmd5", &linkinfo.srcmd5);
         link_xml.add_attribute("xsrcmd5", &linkinfo.xsrcmd5);
         link_xml.add_attribute("lsrcmd5", &linkinfo.lsrcmd5);
+
+        if linkinfo.missingok {
+            link_xml.add_attribute("missingok", "1");
+        }
 
         xml.add_child(link_xml).unwrap();
     }
@@ -243,8 +247,6 @@ impl Respond for PackageSourceListingResponder {
 
             // OBS seems to have this weird zero revision that always has
             // the same md5 but no contents, so we just handle it in here.
-            const ZERO_REV_SRCMD5: &str = "d41d8cd98f00b204e9800998ecf8427e";
-
             let mut xml = XMLElement::new("directory");
             xml.add_attribute("name", package_name);
             xml.add_attribute("srcmd5", ZERO_REV_SRCMD5);
@@ -386,7 +388,8 @@ impl Respond for PackageSourcePlacementResponder {
                     )
                 });
 
-            ResponseTemplate::new(StatusCode::Ok).set_body_status_xml("ok", "Ok".to_owned())
+            ResponseTemplate::new(StatusCode::Ok)
+                .set_body_xml(build_status_xml("ok", "Ok".to_owned()))
         } else {
             let package = try_api!(project
                 .packages
@@ -432,6 +435,201 @@ impl PackageSourceCommandResponder {
     }
 }
 
+fn do_commit(
+    request: &Request,
+    project_name: &str,
+    package_name: &str,
+    comment: Option<Cow<'_, str>>,
+    mock: &ObsMock,
+    projects: &mut HashMap<String, MockProject>,
+) -> ResponseTemplate {
+    let project = try_api!(projects
+        .get_mut(project_name)
+        .ok_or_else(|| unknown_project(project_name.to_owned())));
+
+    let package = try_api!(project
+        .packages
+        .get_mut(package_name)
+        .ok_or_else(|| unknown_package(package_name.to_owned())));
+
+    let time = SystemTime::now();
+
+    let mut entries = HashMap::new();
+
+    let filelist: DirectoryRequest = try_api!(parse_xml_request(request));
+    let mut missing = Vec::new();
+
+    for req_entry in filelist.entries {
+        let key = MockSourceFileKey::borrowed(&req_entry.name, &req_entry.md5);
+        if package.files.get(&key).is_some() {
+            entries.insert(
+                key.path.into_owned(),
+                MockEntry {
+                    md5: key.md5.into_owned(),
+                    mtime: time,
+                },
+            );
+        } else {
+            missing.push(req_entry);
+        }
+    }
+
+    if !missing.is_empty() {
+        let mut xml = XMLElement::new("directory");
+        xml.add_attribute("name", package_name);
+        xml.add_attribute("error", "missing");
+
+        for req_entry in missing {
+            let mut entry_xml = XMLElement::new("entry");
+            entry_xml.add_attribute("name", &req_entry.name);
+            entry_xml.add_attribute("md5", &req_entry.md5);
+
+            xml.add_child(entry_xml).unwrap();
+        }
+
+        return ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml);
+    }
+
+    let options = MockRevisionOptions {
+        srcmd5: random_md5(),
+        // TODO: detect the source package version
+        version: None,
+        time,
+        user: mock.auth().username().to_owned(),
+        comment: comment.map(|c| c.into_owned()),
+    };
+    package.add_revision(options, entries);
+
+    let rev_id = package.revisions.len();
+    let rev = package.revisions.last().unwrap();
+    ResponseTemplate::new(StatusCode::Ok).set_body_xml(source_listing_xml(
+        package_name,
+        package,
+        rev_id,
+        rev,
+    ))
+}
+
+fn branch_data_xml(name: &str, value: String) -> XMLElement {
+    let mut xml = XMLElement::new("data");
+    xml.add_attribute("name", name);
+    xml.add_text(value).unwrap();
+    xml
+}
+
+fn do_branch(
+    request: &Request,
+    origin_project_name: &str,
+    origin_package_name: &str,
+    comment: Option<Cow<'_, str>>,
+    mock: &ObsMock,
+    projects: &mut HashMap<String, MockProject>,
+) -> ResponseTemplate {
+    let target_project_name = find_query_param(request, "target_project").unwrap_or_else(|| {
+        Cow::Owned(format!(
+            "home:{}:branches:{}",
+            mock.auth().username(),
+            origin_project_name
+        ))
+    });
+    let target_package_name =
+        find_query_param(request, "target_package").unwrap_or(Cow::Borrowed(origin_package_name));
+    let force = find_query_param(request, "force").is_some();
+    let missingok = find_query_param(request, "missingok").is_some();
+
+    let origin = projects.get_mut(origin_project_name);
+    ensure!(
+        origin.is_some() || missingok,
+        unknown_project(origin_project_name.to_owned())
+    );
+
+    let origin_package = origin.and_then(|project| project.packages.get_mut(origin_package_name));
+
+    match (origin_package.is_some(), missingok) {
+        // Package exists, missingok=true
+        (true, true) => {
+            return ApiError::new(
+                StatusCode::BadRequest,
+                "not_missing".to_owned(),
+                format!(
+                    "Branch call with missingok parameter but branched source ({}/{}) exists.",
+                    origin_project_name, origin_package_name
+                ),
+            )
+            .into_response();
+        }
+        // Package does not exist, missingok=false
+        (false, false) => {
+            return unknown_package(origin_package_name.to_owned()).into_response();
+        }
+        _ => {}
+    }
+
+    let target_package = MockPackage::new_branched(
+        origin_project_name.to_owned(),
+        origin_package_name.to_owned(),
+        origin_package.as_deref(),
+        &target_project_name,
+        &target_package_name,
+        MockBranchOptions {
+            srcmd5: random_md5(),
+            xsrcmd5: random_md5(),
+            user: mock.auth().username().to_owned(),
+            time: SystemTime::now(),
+            comment: comment.map(Cow::into_owned),
+            missingok,
+        },
+    );
+
+    let target_project = projects
+        .entry(target_project_name.clone().into_owned())
+        .or_default();
+
+    ensure!(
+        force
+            || !target_project
+                .packages
+                .contains_key(target_package_name.as_ref()),
+        ApiError::new(
+            StatusCode::BadRequest,
+            "double_branch_package".to_owned(),
+            format!(
+                "branch target package already exists: {}/{}",
+                target_project_name, target_package_name
+            )
+        )
+    );
+
+    target_project
+        .packages
+        .insert(target_package_name.to_string(), target_package);
+
+    let mut xml = build_status_xml("ok", "Ok".to_owned());
+
+    xml.add_child(branch_data_xml(
+        "targetproject",
+        target_project_name.into_owned(),
+    ))
+    .unwrap();
+    xml.add_child(branch_data_xml(
+        "targetpackage",
+        target_package_name.into_owned(),
+    ))
+    .unwrap();
+    xml.add_child(branch_data_xml(
+        "sourceproject",
+        origin_project_name.to_owned(),
+    ))
+    .unwrap();
+    xml.add_child(branch_data_xml(
+        "sourcepackage",
+        origin_package_name.to_owned(),
+    ))
+    .unwrap();
+
+    ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+}
+
 impl Respond for PackageSourceCommandResponder {
     fn respond(&self, request: &Request) -> ResponseTemplate {
         try_api!(check_auth(self.mock.auth(), request));
@@ -441,14 +639,6 @@ impl Respond for PackageSourceCommandResponder {
         let project_name = components.nth_back(0).unwrap();
 
         let mut projects = self.mock.projects().write().unwrap();
-        let project = try_api!(projects
-            .get_mut(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
-
-        let package = try_api!(project
-            .packages
-            .get_mut(package_name)
-            .ok_or_else(|| unknown_package(package_name.to_owned())));
 
         let cmd = try_api!(
             find_query_param(request, "cmd").ok_or_else(|| ApiError::new(
@@ -461,64 +651,22 @@ impl Respond for PackageSourceCommandResponder {
         let comment = find_query_param(request, "comment");
 
         match cmd.as_ref() {
-            "commitfilelist" => {
-                let time = SystemTime::now();
-
-                let mut entries = HashMap::new();
-
-                let filelist: DirectoryRequest = try_api!(parse_xml_request(request));
-                let mut missing = Vec::new();
-
-                for req_entry in filelist.entries {
-                    let key = MockSourceFileKey::borrowed(&req_entry.name, &req_entry.md5);
-                    if package.files.get(&key).is_some() {
-                        entries.insert(
-                            key.path.into_owned(),
-                            MockEntry {
-                                md5: key.md5.into_owned(),
-                                mtime: time,
-                            },
-                        );
-                    } else {
-                        missing.push(req_entry);
-                    }
-                }
-
-                if !missing.is_empty() {
-                    let mut xml = XMLElement::new("directory");
-                    xml.add_attribute("name", package_name);
-                    xml.add_attribute("error", "missing");
-
-                    for req_entry in missing {
-                        let mut entry_xml = XMLElement::new("entry");
-                        entry_xml.add_attribute("name", &req_entry.name);
-                        entry_xml.add_attribute("md5", &req_entry.md5);
-
-                        xml.add_child(entry_xml).unwrap();
-                    }
-
-                    return ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml);
-                }
-
-                let options = MockRevisionOptions {
-                    srcmd5: random_md5(),
-                    // TODO: detect the source package version
-                    version: None,
-                    time,
-                    user: self.mock.auth().username().to_owned(),
-                    comment: comment.map(|c| c.into_owned()),
-                };
-                package.add_revision(options, entries);
-
-                let rev_id = package.revisions.len();
-                let rev = package.revisions.last().unwrap();
-                ResponseTemplate::new(StatusCode::Ok).set_body_xml(source_listing_xml(
-                    package_name,
-                    package,
-                    rev_id,
-                    rev,
-                ))
-            }
+            "commitfilelist" => do_commit(
+                request,
+                project_name,
+                package_name,
+                comment,
+                &self.mock,
+                &mut *projects,
+            ),
+            "branch" => do_branch(
+                request,
+                project_name,
+                package_name,
+                comment,
+                &self.mock,
+                &mut *projects,
+            ),
             _ => ApiError::new(
                 StatusCode::NotFound,
                 "illegal_request".to_string(),
