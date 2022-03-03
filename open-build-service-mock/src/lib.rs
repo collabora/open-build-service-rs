@@ -26,6 +26,9 @@ mod api;
 
 pub const ADMIN_USER: &str = "Admin";
 
+// MD5 of the empty string, used as the srcmd5 of the "zero revision".
+pub const ZERO_REV_SRCMD5: &str = "d41d8cd98f00b204e9800998ecf8427e";
+
 pub fn random_md5() -> String {
     let md5bytes: [u8; 16] = rand::random();
     base16ct::lower::encode_string(&md5bytes)
@@ -102,6 +105,7 @@ struct MockLinkInfo {
     srcmd5: String,
     lsrcmd5: String,
     xsrcmd5: String,
+    missingok: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -240,6 +244,76 @@ impl MockPackage {
         }
     }
 
+    pub fn new_branched(
+        origin_project_name: String,
+        origin_package_name: String,
+        origin: Option<&MockPackage>,
+        branched_project_name: &str,
+        branched_package_name: &str,
+        options: MockBranchOptions,
+    ) -> MockPackage {
+        let (meta_key, meta_contents) =
+            MockSourceFile::new_metadata(branched_project_name, branched_package_name)
+                .into_key_and_contents();
+        let meta_entry = MockEntry::from_key(&meta_key, options.time);
+
+        let (mut files, entries, origin_srcmd5) = if let Some((origin, origin_rev)) =
+            origin.and_then(|origin| origin.revisions.last().map(|rev| (origin, rev)))
+        {
+            (
+                origin.files.clone(),
+                origin_rev.entries.clone(),
+                origin_rev.options.srcmd5.clone(),
+            )
+        } else {
+            (HashMap::new(), HashMap::new(), ZERO_REV_SRCMD5.to_owned())
+        };
+
+        files.insert(meta_key, meta_contents);
+
+        let linkinfo = MockLinkInfo {
+            project: origin_project_name,
+            package: origin_package_name,
+            baserev: origin_srcmd5.clone(),
+            srcmd5: origin_srcmd5,
+            xsrcmd5: options.xsrcmd5,
+            lsrcmd5: options.srcmd5.clone(),
+            missingok: options.missingok,
+        };
+
+        let mut latest_vrevs = HashMap::new();
+        latest_vrevs.insert(None, 1);
+
+        MockPackage {
+            files,
+            revisions: vec![MockRevision {
+                vrev: Some(1),
+                options: MockRevisionOptions {
+                    srcmd5: options.srcmd5,
+                    version: None,
+                    time: options.time,
+                    user: options.user.clone(),
+                    comment: options.comment.clone(),
+                },
+                linkinfo: vec![linkinfo],
+                entries,
+            }],
+            meta_revisions: vec![MockRevision {
+                vrev: None,
+                options: MockRevisionOptions {
+                    srcmd5: random_md5(),
+                    version: None,
+                    time: options.time,
+                    user: options.user,
+                    comment: options.comment,
+                },
+                linkinfo: vec![],
+                entries: [(MockSourceFile::META_PATH.to_owned(), meta_entry)].into(),
+            }],
+            latest_vrevs,
+        }
+    }
+
     fn add_revision(&mut self, options: MockRevisionOptions, entries: HashMap<String, MockEntry>) {
         let vrev = self
             .latest_vrevs
@@ -271,6 +345,7 @@ pub struct MockBranchOptions {
     pub user: String,
     pub time: SystemTime,
     pub comment: Option<String>,
+    pub missingok: bool,
 }
 
 impl Default for MockBranchOptions {
@@ -281,6 +356,7 @@ impl Default for MockBranchOptions {
             time: SystemTime::now(),
             user: ADMIN_USER.to_owned(),
             comment: None,
+            missingok: false,
         }
     }
 }
@@ -525,67 +601,23 @@ impl ObsMock {
         branched_package_name: String,
         options: MockBranchOptions,
     ) {
-        let (meta_key, meta_contents) =
-            MockSourceFile::new_metadata(branched_project_name, &branched_package_name)
-                .into_key_and_contents();
-        let meta_entry = MockEntry::from_key(&meta_key, options.time);
-
         let mut projects = self.inner.projects.write().unwrap();
-        let origin_project = get_project(&mut *projects, &origin_project_name);
-        let origin = get_package(origin_project, &origin_package_name);
+        let origin = get_package(
+            get_project(&mut *projects, &origin_project_name),
+            &origin_package_name,
+        );
 
-        let mut origin_files = origin.files.clone();
-        let origin_rev = origin.revisions.last().unwrap();
-        let origin_entries = origin_rev.entries.clone();
-        let origin_srcmd5 = origin_rev.options.srcmd5.clone();
-
-        origin_files.insert(meta_key, meta_contents);
-
-        let linkinfo = MockLinkInfo {
-            project: origin_project_name,
-            package: origin_package_name,
-            baserev: origin_srcmd5.clone(),
-            srcmd5: origin_srcmd5,
-            xsrcmd5: options.xsrcmd5,
-            lsrcmd5: options.srcmd5.clone(),
-        };
-
-        let mut latest_vrevs = HashMap::new();
-        latest_vrevs.insert(None, 1);
+        let package = MockPackage::new_branched(
+            origin_project_name,
+            origin_package_name,
+            Some(origin),
+            branched_project_name,
+            &branched_package_name,
+            options,
+        );
 
         let project = get_project(&mut *projects, branched_project_name);
-
-        project.packages.insert(
-            branched_package_name,
-            MockPackage {
-                files: origin_files,
-                revisions: vec![MockRevision {
-                    vrev: Some(1),
-                    options: MockRevisionOptions {
-                        srcmd5: options.srcmd5,
-                        version: None,
-                        time: options.time,
-                        user: options.user.clone(),
-                        comment: options.comment.clone(),
-                    },
-                    linkinfo: vec![linkinfo],
-                    entries: origin_entries,
-                }],
-                meta_revisions: vec![MockRevision {
-                    vrev: None,
-                    options: MockRevisionOptions {
-                        srcmd5: random_md5(),
-                        version: None,
-                        time: options.time,
-                        user: options.user,
-                        comment: options.comment,
-                    },
-                    linkinfo: vec![],
-                    entries: [(MockSourceFile::META_PATH.to_owned(), meta_entry)].into(),
-                }],
-                latest_vrevs,
-            },
-        );
+        project.packages.insert(branched_package_name, package);
     }
 
     pub fn add_or_update_repository(

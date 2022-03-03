@@ -373,6 +373,143 @@ async fn test_commits() {
     );
 }
 
+#[tokio::test]
+async fn test_branch() {
+    let test_file = "test";
+    let test_contents = b"some file contents here";
+
+    let test_project_branched_1 = format!("home:{}:branches:{}", DEFAULT_USERNAME, TEST_PROJECT);
+    let test_project_branched_2 = format!("{}:branch", TEST_PROJECT);
+
+    let mock = start_mock().await;
+    mock.add_project(TEST_PROJECT.to_owned());
+
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_1.to_owned(),
+        MockPackageOptions::default(),
+    );
+
+    let test_key = mock.add_package_files(
+        TEST_PROJECT,
+        TEST_PACKAGE_1,
+        MockSourceFile {
+            path: test_file.to_owned(),
+            contents: test_contents.to_vec(),
+        },
+    );
+
+    mock.add_package_revision(
+        TEST_PROJECT,
+        TEST_PACKAGE_1,
+        MockRevisionOptions::default(),
+        [(
+            test_file.to_owned(),
+            MockEntry::from_key(&test_key, SystemTime::now()),
+        )]
+        .into(),
+    );
+
+    let obs = create_authenticated_client(mock);
+
+    let status = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .branch(&BranchOptions::default())
+        .await
+        .unwrap();
+    assert_eq!(status.source_project, TEST_PROJECT);
+    assert_eq!(status.source_package, TEST_PACKAGE_1);
+    assert_eq!(status.target_project, test_project_branched_1);
+    assert_eq!(status.target_package, TEST_PACKAGE_1);
+
+    let dir = obs
+        .project(test_project_branched_1.clone())
+        .package(TEST_PACKAGE_1.to_owned())
+        .list(None)
+        .await
+        .unwrap();
+    assert_eq!(dir.linkinfo.len(), 1);
+    assert_eq!(dir.linkinfo[0].project, TEST_PROJECT);
+    assert_eq!(dir.linkinfo[0].package, TEST_PACKAGE_1);
+    assert!(!dir.linkinfo[0].missingok);
+
+    let err = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .branch(&BranchOptions::default())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        Error::ApiError(ApiError { code,.. }) if code == "double_branch_package"
+    ));
+
+    let status = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .branch(&BranchOptions {
+            force: true,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(status.source_project, TEST_PROJECT);
+    assert_eq!(status.source_package, TEST_PACKAGE_1);
+    assert_eq!(status.target_project, test_project_branched_1);
+    assert_eq!(status.target_package, TEST_PACKAGE_1);
+
+    let status = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .branch(&BranchOptions {
+            target_project: Some(test_project_branched_2.clone()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(status.source_project, TEST_PROJECT);
+    assert_eq!(status.source_package, TEST_PACKAGE_1);
+    assert_eq!(status.target_project, test_project_branched_2);
+    assert_eq!(status.target_package, TEST_PACKAGE_1);
+
+    let dir = obs
+        .project(test_project_branched_2.clone())
+        .package(TEST_PACKAGE_1.to_owned())
+        .list(None)
+        .await
+        .unwrap();
+    assert_eq!(dir.linkinfo.len(), 1);
+    assert_eq!(dir.linkinfo[0].project, TEST_PROJECT);
+    assert_eq!(dir.linkinfo[0].package, TEST_PACKAGE_1);
+    assert!(!dir.linkinfo[0].missingok);
+
+    let status = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_2.to_owned())
+        .branch(&BranchOptions {
+            missingok: true,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(status.source_project, TEST_PROJECT);
+    assert_eq!(status.source_package, TEST_PACKAGE_2);
+    assert_eq!(status.target_project, test_project_branched_1);
+    assert_eq!(status.target_package, TEST_PACKAGE_2);
+
+    let dir = obs
+        .project(test_project_branched_1.clone())
+        .package(TEST_PACKAGE_2.to_owned())
+        .list(None)
+        .await
+        .unwrap();
+    assert_eq!(dir.linkinfo.len(), 1);
+    assert_eq!(dir.linkinfo[0].project, TEST_PROJECT);
+    assert_eq!(dir.linkinfo[0].package, TEST_PACKAGE_2);
+    assert!(dir.linkinfo[0].missingok);
+}
+
 fn get_results_by_arch(mut results: ResultList) -> (ResultListResult, ResultListResult) {
     assert_eq!(results.results.len(), 2);
 
