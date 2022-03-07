@@ -3,6 +3,7 @@ use secret_service::SecretService;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::File;
+use std::io::Read;
 use std::path::Path;
 use thiserror::Error;
 use url::Url;
@@ -66,9 +67,13 @@ impl Oscrc {
         Ok(pass)
     }
 
+    pub fn from_reader<R: Read>(reader: R) -> Result<Self, Error> {
+        serde_ini::from_read(reader).map_err(|e| e.into())
+    }
+
     pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
         let oscrc = File::open(path)?;
-        serde_ini::from_read(oscrc).map_err(|e| e.into())
+        Self::from_reader(oscrc)
     }
 
     pub fn default_service(&self) -> &Url {
