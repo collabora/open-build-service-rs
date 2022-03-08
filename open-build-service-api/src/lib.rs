@@ -409,6 +409,32 @@ pub struct RepoDirectory {
     pub entries: Vec<RepoDirectoryEntry>,
 }
 
+#[derive(Clone, Debug)]
+pub struct RebuildFilters {
+    packages: Vec<String>,
+}
+
+impl RebuildFilters {
+    pub fn all() -> Self {
+        RebuildFilters {
+            packages: Vec::new(),
+        }
+    }
+
+    pub fn only_package(package: String) -> Self {
+        RebuildFilters::all().package(package)
+    }
+
+    pub fn add_package(&mut self, package: String) {
+        self.packages.push(package);
+    }
+
+    pub fn package(mut self, package: String) -> Self {
+        self.add_package(package);
+        self
+    }
+}
+
 #[derive(Deserialize, Debug)]
 struct LogEntryEntry {
     size: usize,
@@ -664,6 +690,21 @@ impl<'a> PackageBuilder<'a> {
     pub async fn binaries(&self, repository: &str, arch: &str) -> Result<BinaryList> {
         let u = self.full_request(repository, arch, None)?;
         self.client.request(u).await
+    }
+
+    pub async fn rebuild(&self) -> Result<()> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("build")
+            .push(&self.project);
+
+        u.query_pairs_mut().append_pair("cmd", "rebuild");
+        u.query_pairs_mut().append_pair("package", &self.package);
+
+        Client::send_with_error(self.client.authenticated_request(Method::POST, u)).await?;
+
+        Ok(())
     }
 
     pub fn log(&self, repository: &str, arch: &str) -> PackageLog<'a> {
@@ -948,6 +989,23 @@ impl<'a> ProjectBuilder<'a> {
             .into_iter()
             .map(|e| e.name)
             .collect())
+    }
+
+    pub async fn rebuild(&self, filters: &RebuildFilters) -> Result<()> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("build")
+            .push(&self.project);
+
+        u.query_pairs_mut().append_pair("cmd", "rebuild");
+        for package in &filters.packages {
+            u.query_pairs_mut().append_pair("package", package);
+        }
+
+        Client::send_with_error(self.client.authenticated_request(Method::POST, u)).await?;
+
+        Ok(())
     }
 }
 
