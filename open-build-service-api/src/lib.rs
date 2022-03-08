@@ -730,6 +730,19 @@ impl<'a> PackageBuilder<'a> {
         Ok(())
     }
 
+    pub async fn delete(&self) -> Result<()> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push(&self.package);
+
+        Client::send_with_error(self.client.authenticated_request(Method::DELETE, u)).await?;
+
+        Ok(())
+    }
+
     pub async fn revisions(&self) -> Result<RevisionList> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
@@ -936,6 +949,18 @@ impl<'a> ProjectBuilder<'a> {
             project: self.project,
             package,
         }
+    }
+
+    pub async fn delete(&self) -> Result<()> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project);
+
+        Client::send_with_error(self.client.authenticated_request(Method::DELETE, u)).await?;
+
+        Ok(())
     }
 
     pub async fn meta(&self) -> Result<ProjectMeta> {

@@ -60,6 +60,56 @@ async fn test_project_meta() {
 }
 
 #[tokio::test]
+async fn test_project_package_delete() {
+    let mock = start_mock().await;
+    mock.add_project(TEST_PROJECT.to_owned());
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_1.to_owned(),
+        MockPackageOptions::default(),
+    );
+
+    let obs = create_authenticated_client(mock.clone());
+
+    obs.project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .list(None)
+        .await
+        .unwrap();
+
+    obs.project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .delete()
+        .await
+        .unwrap();
+
+    let err = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .list(None)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        Error::ApiError(ApiError { code, .. }) if code == "unknown_package"
+    ));
+
+    obs.project(TEST_PROJECT.to_owned()).meta().await.unwrap();
+
+    obs.project(TEST_PROJECT.to_owned()).delete().await.unwrap();
+
+    let err = obs
+        .project(TEST_PROJECT.to_owned())
+        .meta()
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        err,
+        Error::ApiError(ApiError { code, .. }) if code == "unknown_project"
+    ));
+}
+
+#[tokio::test]
 async fn test_source_history() {
     let srcmd5 = random_md5();
     let time = SystemTime::UNIX_EPOCH + Duration::from_secs(10);

@@ -8,9 +8,9 @@ use std::{
 use api::{
     ArchListingResponder, BuildBinaryFileResponder, BuildBinaryListResponder, BuildLogResponder,
     BuildPackageStatusResponder, BuildResultsResponder, PackageSourceCommandResponder,
-    PackageSourceFileResponder, PackageSourceHistoryResponder, PackageSourceListingResponder,
-    PackageSourcePlacementResponder, ProjectBuildCommandResponder, ProjectMetaResponder,
-    RepoListingResponder,
+    PackageSourceDeleteResponder, PackageSourceFileResponder, PackageSourceHistoryResponder,
+    PackageSourceListingResponder, PackageSourcePlacementResponder, ProjectBuildCommandResponder,
+    ProjectDeleteResponder, ProjectMetaResponder, RepoListingResponder,
 };
 
 use http_types::auth::BasicAuth;
@@ -495,6 +495,12 @@ impl ObsMock {
             inner: Arc::new(inner),
         };
 
+        Mock::given(method("DELETE"))
+            .and(path_regex("^/source/[^/]+$"))
+            .respond_with(ProjectDeleteResponder::new(server.clone()))
+            .mount(&server.inner.server)
+            .await;
+
         Mock::given(method("GET"))
             .and(path_regex("^/source/[^/]+/_meta$"))
             .respond_with(ProjectMetaResponder::new(server.clone()))
@@ -510,6 +516,12 @@ impl ObsMock {
         Mock::given(method("POST"))
             .and(path_regex("^/source/[^/]+/[^/]+$"))
             .respond_with(PackageSourceCommandResponder::new(server.clone()))
+            .mount(&server.inner.server)
+            .await;
+
+        Mock::given(method("DELETE"))
+            .and(path_regex("^/source/[^/]+/[^/]+$"))
+            .respond_with(PackageSourceDeleteResponder::new(server.clone()))
             .mount(&server.inner.server)
             .await;
 
