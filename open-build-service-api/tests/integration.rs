@@ -642,6 +642,17 @@ async fn test_build_results() {
         MockRepositoryCode::Broken,
     );
 
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_1.to_owned(),
+        MockPackageOptions::default(),
+    );
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_2.to_owned(),
+        MockPackageOptions::default(),
+    );
+
     mock.set_package_build_status(
         TEST_PROJECT,
         TEST_REPO,
@@ -737,6 +748,11 @@ async fn test_build_binaries() {
         MockRepositoryCode::Finished,
     );
 
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_1.to_owned(),
+        MockPackageOptions::default(),
+    );
     mock.set_package_binaries(
         TEST_PROJECT,
         TEST_REPO,
@@ -815,6 +831,11 @@ async fn test_build_status() {
         TEST_ARCH_1.to_owned(),
         MockRepositoryCode::Building,
     );
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_1.to_owned(),
+        MockPackageOptions::default(),
+    );
     mock.set_package_build_status(
         TEST_PROJECT,
         TEST_REPO,
@@ -875,6 +896,11 @@ async fn test_build_logs() {
         TEST_REPO.to_owned(),
         TEST_ARCH_1.to_owned(),
         MockRepositoryCode::Building,
+    );
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_1.to_owned(),
+        MockPackageOptions::default(),
     );
     mock.add_completed_build_log(
         TEST_PROJECT,

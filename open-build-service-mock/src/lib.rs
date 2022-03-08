@@ -704,6 +704,13 @@ impl ObsMock {
         let mut projects = self.inner.projects.write().unwrap();
         let project = get_project(&mut *projects, project_name);
 
+        // Make sure the source package exists.
+        assert!(
+            project.packages.contains_key(&package_name),
+            "Unknown package: {}",
+            package_name
+        );
+
         let package = project
             .repos
             .get_mut(repo_name)
