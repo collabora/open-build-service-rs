@@ -399,12 +399,12 @@ pub struct BinaryList {
 }
 
 #[derive(Deserialize, Debug)]
-struct RepoDirectoryEntry {
+pub struct RepoDirectoryEntry {
     pub name: String,
 }
 
 #[derive(Deserialize, Debug)]
-struct RepoDirectory {
+pub struct RepoDirectory {
     #[serde(rename = "entry")]
     pub entries: Vec<RepoDirectoryEntry>,
 }
