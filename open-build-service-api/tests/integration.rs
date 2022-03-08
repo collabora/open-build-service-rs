@@ -36,12 +36,9 @@ async fn test_project_list() {
     mock.add_project(TEST_PROJECT.to_owned());
 
     let obs = create_authenticated_client(mock.clone());
+    let project = obs.project(TEST_PROJECT.to_owned());
 
-    let dir = obs
-        .project(TEST_PROJECT.to_owned())
-        .list_packages()
-        .await
-        .unwrap();
+    let dir = project.list_packages().await.unwrap();
     assert_eq!(dir.entries.len(), 0);
 
     mock.add_new_package(
@@ -55,11 +52,7 @@ async fn test_project_list() {
         MockPackageOptions::default(),
     );
 
-    let mut dir = obs
-        .project(TEST_PROJECT.to_owned())
-        .list_packages()
-        .await
-        .unwrap();
+    let mut dir = project.list_packages().await.unwrap();
     assert_eq!(dir.entries.len(), 2);
 
     dir.entries.sort_by(|a, b| a.name.cmp(&b.name));
@@ -73,8 +66,9 @@ async fn test_project_meta() {
     mock.add_project(TEST_PROJECT.to_owned());
 
     let obs = create_authenticated_client(mock.clone());
+    let project = obs.project(TEST_PROJECT.to_owned());
 
-    let meta = obs.project(TEST_PROJECT.to_owned()).meta().await.unwrap();
+    let meta = project.meta().await.unwrap();
     assert_eq!(meta.name, TEST_PROJECT);
     assert_eq!(meta.repositories.len(), 0);
 
@@ -86,7 +80,7 @@ async fn test_project_meta() {
         MockRepositoryCode::Unknown,
     );
 
-    let meta = obs.project(TEST_PROJECT.to_owned()).meta().await.unwrap();
+    let meta = project.meta().await.unwrap();
     assert_eq!(meta.name, TEST_PROJECT);
     assert_eq!(meta.repositories.len(), 1);
     assert_eq!(meta.repositories[0].name, TEST_REPO);
@@ -108,38 +102,26 @@ async fn test_project_package_delete() {
 
     let obs = create_authenticated_client(mock.clone());
 
-    obs.project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .list(None)
-        .await
-        .unwrap();
-
-    obs.project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .delete()
-        .await
-        .unwrap();
-
-    let err = obs
+    let project = obs.project(TEST_PROJECT.to_owned());
+    let package_1 = obs
         .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .list(None)
-        .await
-        .unwrap_err();
+        .package(TEST_PACKAGE_1.to_owned());
+
+    package_1.list(None).await.unwrap();
+
+    package_1.delete().await.unwrap();
+
+    let err = package_1.list(None).await.unwrap_err();
     assert!(matches!(
         err,
         Error::ApiError(ApiError { code, .. }) if code == "unknown_package"
     ));
 
-    obs.project(TEST_PROJECT.to_owned()).meta().await.unwrap();
+    project.meta().await.unwrap();
 
-    obs.project(TEST_PROJECT.to_owned()).delete().await.unwrap();
+    project.delete().await.unwrap();
 
-    let err = obs
-        .project(TEST_PROJECT.to_owned())
-        .meta()
-        .await
-        .unwrap_err();
+    let err = project.meta().await.unwrap_err();
     assert!(matches!(
         err,
         Error::ApiError(ApiError { code, .. }) if code == "unknown_project"
@@ -161,13 +143,11 @@ async fn test_source_history() {
     );
 
     let obs = create_authenticated_client(mock.clone());
-
-    let revisions = obs
+    let package_1 = obs
         .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .revisions()
-        .await
-        .unwrap();
+        .package(TEST_PACKAGE_1.to_owned());
+
+    let revisions = package_1.revisions().await.unwrap();
     assert_eq!(revisions.revisions.len(), 0);
 
     mock.add_package_revision(
@@ -183,13 +163,7 @@ async fn test_source_history() {
         HashMap::new(),
     );
 
-    let revisions = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .revisions()
-        .await
-        .unwrap();
-
+    let revisions = package_1.revisions().await.unwrap();
     assert_eq!(revisions.revisions.len(), 1);
 
     let rev = &revisions.revisions[0];
@@ -214,24 +188,20 @@ async fn test_source_list() {
     );
 
     let obs = create_authenticated_client(mock.clone());
-
-    let dir = obs
+    let package_1 = obs
         .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .list(None)
-        .await
-        .unwrap();
+        .package(TEST_PACKAGE_1.to_owned());
+    let package_2 = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_2.to_owned());
+
+    let dir = package_1.list(None).await.unwrap();
 
     assert_eq!(dir.name, TEST_PACKAGE_1);
     assert!(dir.rev.is_none());
     assert!(dir.vrev.is_none());
 
-    let meta_dir = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .list_meta(None)
-        .await
-        .unwrap();
+    let meta_dir = package_1.list_meta(None).await.unwrap();
 
     assert_eq!(meta_dir.name, TEST_PACKAGE_1);
     assert_eq!(meta_dir.rev.unwrap(), "1");
@@ -249,12 +219,7 @@ async fn test_source_list() {
         HashMap::new(),
     );
 
-    let dir = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .list(None)
-        .await
-        .unwrap();
+    let dir = package_1.list(None).await.unwrap();
 
     assert_eq!(dir.name, TEST_PACKAGE_1);
     assert_eq!(dir.rev.unwrap(), "1");
@@ -295,12 +260,7 @@ async fn test_source_list() {
         .into(),
     );
 
-    let dir = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .list(None)
-        .await
-        .unwrap();
+    let dir = package_1.list(None).await.unwrap();
 
     assert_eq!(dir.name, TEST_PACKAGE_1);
     assert_eq!(dir.rev.unwrap(), "2");
@@ -312,12 +272,7 @@ async fn test_source_list() {
     let test_entry = &dir.entries[0];
     assert_eq!(test_entry.size, test_data.len() as u64);
 
-    let dir = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .list(Some("1"))
-        .await
-        .unwrap();
+    let dir = package_1.list(Some("1")).await.unwrap();
 
     assert_eq!(dir.rev.unwrap(), "1");
     assert_eq!(dir.entries.len(), 0);
@@ -337,12 +292,7 @@ async fn test_source_list() {
         },
     );
 
-    let dir = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_2.to_owned())
-        .list(None)
-        .await
-        .unwrap();
+    let dir = package_2.list(None).await.unwrap();
 
     assert_eq!(dir.rev.unwrap(), "1");
     assert_eq!(dir.vrev.unwrap(), "1");
@@ -421,16 +371,13 @@ async fn test_commits() {
     mock.add_project(TEST_PROJECT.to_owned());
 
     let obs = create_authenticated_client(mock);
-
-    obs.project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .create()
-        .await
-        .unwrap();
-
-    let commit_result = obs
+    let package_1 = obs
         .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
+        .package(TEST_PACKAGE_1.to_owned());
+
+    package_1.create().await.unwrap();
+
+    let commit_result = package_1
         .commit(&file_list, &CommitOptions::default())
         .await
         .unwrap();
@@ -442,15 +389,12 @@ async fn test_commits() {
         panic!("Expected missing entries, got {:?}", commit_result);
     }
 
-    obs.project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
+    package_1
         .upload_for_commit(test_file, test_contents.to_vec())
         .await
         .unwrap();
 
-    let commit_result = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
+    let commit_result = package_1
         .commit(
             &file_list,
             &CommitOptions {
@@ -467,22 +411,12 @@ async fn test_commits() {
         panic!("Expected missing entries, got {:?}", commit_result);
     }
 
-    let directory = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .list(None)
-        .await
-        .unwrap();
+    let directory = package_1.list(None).await.unwrap();
     assert_eq!(directory.entries.len(), 1);
     assert_eq!(directory.entries[0].name, test_entry.name);
     assert_eq!(directory.entries[0].md5, test_entry.md5);
 
-    let revisions = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .revisions()
-        .await
-        .unwrap();
+    let revisions = package_1.revisions().await.unwrap();
     assert_eq!(
         revisions.revisions.last().unwrap().comment.as_deref(),
         Some("test comment")
@@ -538,42 +472,43 @@ async fn test_branch() {
     );
 
     let obs = create_authenticated_client(mock);
-
-    let status = obs
+    let branched_project_1 = obs.project(test_project_branched_1.clone());
+    let branched_project_2 = obs.project(test_project_branched_2.clone());
+    let package_1 = obs
         .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .branch(&BranchOptions::default())
-        .await
-        .unwrap();
+        .package(TEST_PACKAGE_1.to_owned());
+    let package_2 = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_2.to_owned());
+    let branched_package_1_1 = obs
+        .project(test_project_branched_1.clone())
+        .package(TEST_PACKAGE_1.to_owned());
+    let branched_package_1_2 = obs
+        .project(test_project_branched_1.clone())
+        .package(TEST_PACKAGE_2.to_owned());
+    let branched_package_2_1 = obs
+        .project(test_project_branched_2.clone())
+        .package(TEST_PACKAGE_1.to_owned());
+
+    let status = package_1.branch(&BranchOptions::default()).await.unwrap();
     assert_eq!(status.source_project, TEST_PROJECT);
     assert_eq!(status.source_package, TEST_PACKAGE_1);
     assert_eq!(status.target_project, test_project_branched_1);
     assert_eq!(status.target_package, TEST_PACKAGE_1);
 
-    let dir = obs
-        .project(test_project_branched_1.clone())
-        .package(TEST_PACKAGE_1.to_owned())
-        .list(None)
-        .await
-        .unwrap();
+    let dir = branched_package_1_1.list(None).await.unwrap();
     assert_eq!(dir.linkinfo.len(), 1);
     assert_eq!(dir.linkinfo[0].project, TEST_PROJECT);
     assert_eq!(dir.linkinfo[0].package, TEST_PACKAGE_1);
     assert!(!dir.linkinfo[0].missingok);
 
-    let meta = obs
-        .project(test_project_branched_1.clone())
-        .meta()
-        .await
-        .unwrap();
+    let meta = branched_project_1.meta().await.unwrap();
     assert_eq!(meta.repositories.len(), 1);
     assert_eq!(meta.repositories[0].name, TEST_REPO);
     assert_eq!(meta.repositories[0].rebuild, RebuildMode::Transitive);
     assert_eq!(meta.repositories[0].block, BlockMode::All);
 
-    let err = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
+    let err = package_1
         .branch(&BranchOptions::default())
         .await
         .unwrap_err();
@@ -582,9 +517,7 @@ async fn test_branch() {
         Error::ApiError(ApiError { code,.. }) if code == "double_branch_package"
     ));
 
-    let status = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
+    let status = package_1
         .branch(&BranchOptions {
             force: true,
             ..Default::default()
@@ -596,9 +529,7 @@ async fn test_branch() {
     assert_eq!(status.target_project, test_project_branched_1);
     assert_eq!(status.target_package, TEST_PACKAGE_1);
 
-    let status = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
+    let status = package_1
         .branch(&BranchOptions {
             target_project: Some(test_project_branched_2.clone()),
             add_repositories_rebuild: Some(RebuildMode::Local),
@@ -612,30 +543,19 @@ async fn test_branch() {
     assert_eq!(status.target_project, test_project_branched_2);
     assert_eq!(status.target_package, TEST_PACKAGE_1);
 
-    let dir = obs
-        .project(test_project_branched_2.clone())
-        .package(TEST_PACKAGE_1.to_owned())
-        .list(None)
-        .await
-        .unwrap();
+    let dir = branched_package_2_1.list(None).await.unwrap();
     assert_eq!(dir.linkinfo.len(), 1);
     assert_eq!(dir.linkinfo[0].project, TEST_PROJECT);
     assert_eq!(dir.linkinfo[0].package, TEST_PACKAGE_1);
     assert!(!dir.linkinfo[0].missingok);
 
-    let meta = obs
-        .project(test_project_branched_2.clone())
-        .meta()
-        .await
-        .unwrap();
+    let meta = branched_project_2.meta().await.unwrap();
     assert_eq!(meta.repositories.len(), 1);
     assert_eq!(meta.repositories[0].name, TEST_REPO);
     assert_eq!(meta.repositories[0].rebuild, RebuildMode::Local);
     assert_eq!(meta.repositories[0].block, BlockMode::Never);
 
-    let status = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_2.to_owned())
+    let status = package_2
         .branch(&BranchOptions {
             missingok: true,
             ..Default::default()
@@ -647,12 +567,7 @@ async fn test_branch() {
     assert_eq!(status.target_project, test_project_branched_1);
     assert_eq!(status.target_package, TEST_PACKAGE_2);
 
-    let dir = obs
-        .project(test_project_branched_1.clone())
-        .package(TEST_PACKAGE_2.to_owned())
-        .list(None)
-        .await
-        .unwrap();
+    let dir = branched_package_1_2.list(None).await.unwrap();
     assert_eq!(dir.linkinfo.len(), 1);
     assert_eq!(dir.linkinfo[0].project, TEST_PROJECT);
     assert_eq!(dir.linkinfo[0].package, TEST_PACKAGE_2);
@@ -694,19 +609,12 @@ async fn test_build_repo_listing() {
     );
 
     let obs = create_authenticated_client(mock.clone());
+    let project = obs.project(TEST_PROJECT.to_owned());
 
-    let repositories = obs
-        .project(TEST_PROJECT.to_owned())
-        .repositories()
-        .await
-        .unwrap();
+    let repositories = project.repositories().await.unwrap();
     assert_eq!(&repositories[..], &[TEST_REPO]);
 
-    let mut arches = obs
-        .project(TEST_PROJECT.to_owned())
-        .arches(TEST_REPO)
-        .await
-        .unwrap();
+    let mut arches = project.arches(TEST_REPO).await.unwrap();
     arches.sort();
     assert_eq!(&arches[..], &[TEST_ARCH_1, TEST_ARCH_2]);
 }
@@ -760,8 +668,12 @@ async fn test_build_results() {
     );
 
     let obs = create_authenticated_client(mock.clone());
+    let project = obs.project(TEST_PROJECT.to_owned());
+    let package_2 = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_2.to_owned());
 
-    let results = obs.project(TEST_PROJECT.to_owned()).result().await.unwrap();
+    let results = project.result().await.unwrap();
     let (arch1_repo, arch2_repo) = get_results_by_arch(results);
 
     assert_eq!(arch1_repo.project, TEST_PROJECT);
@@ -769,20 +681,20 @@ async fn test_build_results() {
     assert_eq!(arch1_repo.code, RepositoryCode::Building);
     assert_eq!(arch1_repo.statuses.len(), 1);
 
-    let package1 = &arch1_repo.statuses[0];
-    assert_eq!(package1.package, TEST_PACKAGE_1);
-    assert_eq!(package1.code, PackageCode::Building);
-    assert!(!package1.dirty);
+    let package1_status = &arch1_repo.statuses[0];
+    assert_eq!(package1_status.package, TEST_PACKAGE_1);
+    assert_eq!(package1_status.code, PackageCode::Building);
+    assert!(!package1_status.dirty);
 
     assert_eq!(arch2_repo.project, TEST_PROJECT);
     assert_eq!(arch2_repo.repository, TEST_REPO);
     assert_eq!(arch2_repo.code, RepositoryCode::Broken);
     assert_eq!(arch2_repo.statuses.len(), 1);
 
-    let package2 = &arch2_repo.statuses[0];
-    assert_eq!(package2.package, TEST_PACKAGE_2);
-    assert_eq!(package2.code, PackageCode::Broken);
-    assert!(package2.dirty);
+    let package2_status = &arch2_repo.statuses[0];
+    assert_eq!(package2_status.package, TEST_PACKAGE_2);
+    assert_eq!(package2_status.code, PackageCode::Broken);
+    assert!(package2_status.dirty);
 
     mock.set_package_build_status(
         TEST_PROJECT,
@@ -792,7 +704,7 @@ async fn test_build_results() {
         MockBuildStatus::new(MockPackageCode::Broken),
     );
 
-    let results = obs.project(TEST_PROJECT.to_owned()).result().await.unwrap();
+    let results = project.result().await.unwrap();
     let (arch1_repo, _) = get_results_by_arch(results);
 
     let package2_arch2 = arch1_repo
@@ -804,12 +716,7 @@ async fn test_build_results() {
     assert_eq!(package2_arch2.package, TEST_PACKAGE_2);
     assert_eq!(package2_arch2.code, PackageCode::Broken);
 
-    let results = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_2.to_owned())
-        .result()
-        .await
-        .unwrap();
+    let results = package_2.result().await.unwrap();
     let (arch1_repo, arch2_repo) = get_results_by_arch(results);
 
     assert_eq!(arch1_repo.statuses.len(), 1);
@@ -849,13 +756,11 @@ async fn test_build_binaries() {
     );
 
     let obs = create_authenticated_client(mock.clone());
-
-    let binaries = obs
+    let package_1 = obs
         .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .binaries(TEST_REPO, TEST_ARCH_1)
-        .await
-        .unwrap();
+        .package(TEST_PACKAGE_1.to_owned());
+
+    let binaries = package_1.binaries(TEST_REPO, TEST_ARCH_1).await.unwrap();
     assert_eq!(binaries.binaries.len(), 0);
 
     mock.set_package_binaries(
@@ -873,12 +778,7 @@ async fn test_build_binaries() {
         .into(),
     );
 
-    let binaries = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .binaries(TEST_REPO, TEST_ARCH_1)
-        .await
-        .unwrap();
+    let binaries = package_1.binaries(TEST_REPO, TEST_ARCH_1).await.unwrap();
     assert_eq!(binaries.binaries.len(), 1);
 
     assert_eq!(binaries.binaries[0].filename, test_file);
@@ -892,8 +792,7 @@ async fn test_build_binaries() {
     );
 
     let mut data = Vec::new();
-    obs.project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
+    package_1
         .binary_file(TEST_REPO, TEST_ARCH_1, test_file)
         .await
         .unwrap()
@@ -932,13 +831,11 @@ async fn test_build_status() {
     );
 
     let obs = create_authenticated_client(mock.clone());
-
-    let status = obs
+    let package_1 = obs
         .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .status(TEST_REPO, TEST_ARCH_1)
-        .await
-        .unwrap();
+        .package(TEST_PACKAGE_1.to_owned());
+
+    let status = package_1.status(TEST_REPO, TEST_ARCH_1).await.unwrap();
 
     assert_eq!(status.package, TEST_PACKAGE_1);
     assert_eq!(status.code, PackageCode::Building);
@@ -955,12 +852,7 @@ async fn test_build_status() {
         },
     );
 
-    let status = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .status(TEST_REPO, TEST_ARCH_1)
-        .await
-        .unwrap();
+    let status = package_1.status(TEST_REPO, TEST_ARCH_1).await.unwrap();
 
     assert_eq!(status.package, TEST_PACKAGE_1);
     assert_eq!(status.code, PackageCode::Unknown);
@@ -1010,35 +902,23 @@ async fn test_build_rebuild() {
     );
 
     let obs = create_authenticated_client(mock.clone());
-
-    let status = obs
+    let project = obs.project(TEST_PROJECT.to_owned());
+    let package_1 = obs
         .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .status(TEST_REPO, TEST_ARCH_1)
-        .await
-        .unwrap();
+        .package(TEST_PACKAGE_1.to_owned());
+    let package_2 = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_2.to_owned());
+
+    let status = package_1.status(TEST_REPO, TEST_ARCH_1).await.unwrap();
     assert_eq!(status.code, PackageCode::Blocked);
 
-    obs.project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .rebuild()
-        .await
-        .unwrap();
+    package_1.rebuild().await.unwrap();
 
-    let status = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .status(TEST_REPO, TEST_ARCH_1)
-        .await
-        .unwrap();
+    let status = package_1.status(TEST_REPO, TEST_ARCH_1).await.unwrap();
     assert_eq!(status.code, PackageCode::Building);
 
-    let status = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_2.to_owned())
-        .status(TEST_REPO, TEST_ARCH_1)
-        .await
-        .unwrap();
+    let status = package_2.status(TEST_REPO, TEST_ARCH_1).await.unwrap();
     assert_eq!(status.code, PackageCode::Blocked);
 
     mock.set_package_build_status(
@@ -1056,25 +936,12 @@ async fn test_build_rebuild() {
         MockBuildStatus::new(MockPackageCode::Blocked),
     );
 
-    obs.project(TEST_PROJECT.to_owned())
-        .rebuild(&RebuildFilters::all())
-        .await
-        .unwrap();
+    project.rebuild(&RebuildFilters::all()).await.unwrap();
 
-    let status = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .status(TEST_REPO, TEST_ARCH_1)
-        .await
-        .unwrap();
+    let status = package_1.status(TEST_REPO, TEST_ARCH_1).await.unwrap();
     assert_eq!(status.code, PackageCode::Building);
 
-    let status = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_2.to_owned())
-        .status(TEST_REPO, TEST_ARCH_1)
-        .await
-        .unwrap();
+    let status = package_2.status(TEST_REPO, TEST_ARCH_1).await.unwrap();
     assert_eq!(status.code, PackageCode::Building);
 
     mock.set_package_build_status(
@@ -1092,25 +959,15 @@ async fn test_build_rebuild() {
         MockBuildStatus::new(MockPackageCode::Blocked),
     );
 
-    obs.project(TEST_PROJECT.to_owned())
+    project
         .rebuild(&RebuildFilters::only_package(TEST_PACKAGE_2.to_owned()))
         .await
         .unwrap();
 
-    let status = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .status(TEST_REPO, TEST_ARCH_1)
-        .await
-        .unwrap();
+    let status = package_1.status(TEST_REPO, TEST_ARCH_1).await.unwrap();
     assert_eq!(status.code, PackageCode::Blocked);
 
-    let status = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_2.to_owned())
-        .status(TEST_REPO, TEST_ARCH_1)
-        .await
-        .unwrap();
+    let status = package_2.status(TEST_REPO, TEST_ARCH_1).await.unwrap();
     assert_eq!(status.code, PackageCode::Building);
 }
 
@@ -1146,21 +1003,16 @@ async fn test_build_logs() {
     );
 
     let obs = create_authenticated_client(mock.clone());
-
-    let (size, mtime) = obs
+    let package_1 = obs
         .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
-        .log(TEST_REPO, TEST_ARCH_1)
-        .entry()
-        .await
-        .unwrap();
+        .package(TEST_PACKAGE_1.to_owned());
+
+    let (size, mtime) = package_1.log(TEST_REPO, TEST_ARCH_1).entry().await.unwrap();
 
     assert_eq!(size, log.contents.len());
     assert_eq!(mtime, 0);
 
-    let mut stream = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
+    let mut stream = package_1
         .log(TEST_REPO, TEST_ARCH_1)
         .stream(Default::default())
         .unwrap();
@@ -1173,9 +1025,7 @@ async fn test_build_logs() {
     assert_eq!(chunk.as_ref(), b"ext");
     assert!(stream.next().await.is_none());
 
-    let mut stream = obs
-        .project(TEST_PROJECT.to_owned())
-        .package(TEST_PACKAGE_1.to_owned())
+    let mut stream = package_1
         .log(TEST_REPO, TEST_ARCH_1)
         .stream(PackageLogStreamOptions {
             offset: Some(4),
