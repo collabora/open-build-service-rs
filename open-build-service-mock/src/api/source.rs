@@ -91,6 +91,33 @@ fn parse_xml_request<T: DeserializeOwned>(request: &Request) -> Result<T, ApiErr
         .map_err(|e| ApiError::new(StatusCode::BadRequest, "400".to_string(), e.to_string()))
 }
 
+pub(crate) struct ProjectDeleteResponder {
+    mock: ObsMock,
+}
+
+impl ProjectDeleteResponder {
+    pub fn new(mock: ObsMock) -> Self {
+        Self { mock }
+    }
+}
+
+impl Respond for ProjectDeleteResponder {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        try_api!(check_auth(self.mock.auth(), request));
+
+        let mut components = request.url.path_segments().unwrap();
+        let project_name = components.nth_back(0).unwrap();
+
+        let mut projects = self.mock.projects().write().unwrap();
+
+        match projects.remove(project_name) {
+            Some(_) => ResponseTemplate::new(StatusCode::Ok)
+                .set_body_xml(build_status_xml("ok", Some("Ok".to_owned()))),
+            None => unknown_project(project_name.to_owned()).into_response(),
+        }
+    }
+}
+
 pub(crate) struct ProjectMetaResponder {
     mock: ObsMock,
 }
@@ -760,5 +787,44 @@ impl Respond for PackageSourceCommandResponder {
             )
             .into_response(),
         }
+    }
+}
+
+pub struct PackageSourceDeleteResponder {
+    mock: ObsMock,
+}
+
+impl PackageSourceDeleteResponder {
+    pub fn new(mock: ObsMock) -> Self {
+        PackageSourceDeleteResponder { mock }
+    }
+}
+
+impl Respond for PackageSourceDeleteResponder {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        try_api!(check_auth(self.mock.auth(), request));
+
+        let mut components = request.url.path_segments().unwrap();
+        let package_name = components.nth_back(0).unwrap();
+        let project_name = components.nth_back(0).unwrap();
+
+        let mut projects = self.mock.projects().write().unwrap();
+        let project = try_api!(projects
+            .get_mut(project_name)
+            .ok_or_else(|| unknown_project(project_name.to_owned())));
+
+        ensure!(
+            project.packages.remove(package_name).is_some(),
+            unknown_package(package_name.to_owned())
+        );
+
+        for arches in project.repos.values_mut() {
+            for repo in arches.values_mut() {
+                repo.packages.remove(package_name);
+            }
+        }
+
+        ResponseTemplate::new(StatusCode::Ok)
+            .set_body_xml(build_status_xml("ok", Some("Ok".to_owned())))
     }
 }
