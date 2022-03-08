@@ -91,6 +91,42 @@ fn parse_xml_request<T: DeserializeOwned>(request: &Request) -> Result<T, ApiErr
         .map_err(|e| ApiError::new(StatusCode::BadRequest, "400".to_string(), e.to_string()))
 }
 
+pub(crate) struct ProjectListingResponder {
+    mock: ObsMock,
+}
+
+impl ProjectListingResponder {
+    pub fn new(mock: ObsMock) -> Self {
+        Self { mock }
+    }
+}
+
+impl Respond for ProjectListingResponder {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        try_api!(check_auth(self.mock.auth(), request));
+
+        let mut components = request.url.path_segments().unwrap();
+        let project_name = components.nth_back(0).unwrap();
+
+        let projects = self.mock.projects().write().unwrap();
+        let project = try_api!(projects
+            .get(project_name)
+            .ok_or_else(|| unknown_project(project_name.to_owned())));
+
+        let mut xml = XMLElement::new("directory");
+        xml.add_attribute("count", &project.packages.len().to_string());
+
+        for package_name in project.packages.keys() {
+            let mut entry_xml = XMLElement::new("entry");
+            entry_xml.add_attribute("name", package_name);
+
+            xml.add_child(entry_xml).unwrap();
+        }
+
+        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+    }
+}
+
 pub(crate) struct ProjectDeleteResponder {
     mock: ObsMock,
 }

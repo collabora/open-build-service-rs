@@ -963,6 +963,15 @@ impl<'a> ProjectBuilder<'a> {
         Ok(())
     }
 
+    pub async fn list_packages(&self) -> Result<Directory> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project);
+        self.client.request(u).await
+    }
+
     pub async fn meta(&self) -> Result<ProjectMeta> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
