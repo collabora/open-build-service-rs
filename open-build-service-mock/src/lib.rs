@@ -10,7 +10,7 @@ use api::{
     BuildPackageStatusResponder, BuildResultsResponder, PackageSourceCommandResponder,
     PackageSourceDeleteResponder, PackageSourceFileResponder, PackageSourceHistoryResponder,
     PackageSourceListingResponder, PackageSourcePlacementResponder, ProjectBuildCommandResponder,
-    ProjectDeleteResponder, ProjectMetaResponder, RepoListingResponder,
+    ProjectDeleteResponder, ProjectListingResponder, ProjectMetaResponder, RepoListingResponder,
 };
 
 use http_types::auth::BasicAuth;
@@ -494,6 +494,12 @@ impl ObsMock {
         let server = Self {
             inner: Arc::new(inner),
         };
+
+        Mock::given(method("GET"))
+            .and(path_regex("^/source/[^/]+$"))
+            .respond_with(ProjectListingResponder::new(server.clone()))
+            .mount(&server.inner.server)
+            .await;
 
         Mock::given(method("DELETE"))
             .and(path_regex("^/source/[^/]+$"))

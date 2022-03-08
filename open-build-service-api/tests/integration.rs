@@ -31,6 +31,43 @@ fn create_authenticated_client(mock: ObsMock) -> Client {
 }
 
 #[tokio::test]
+async fn test_project_list() {
+    let mock = start_mock().await;
+    mock.add_project(TEST_PROJECT.to_owned());
+
+    let obs = create_authenticated_client(mock.clone());
+
+    let dir = obs
+        .project(TEST_PROJECT.to_owned())
+        .list_packages()
+        .await
+        .unwrap();
+    assert_eq!(dir.entries.len(), 0);
+
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_1.to_owned(),
+        MockPackageOptions::default(),
+    );
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_2.to_owned(),
+        MockPackageOptions::default(),
+    );
+
+    let mut dir = obs
+        .project(TEST_PROJECT.to_owned())
+        .list_packages()
+        .await
+        .unwrap();
+    assert_eq!(dir.entries.len(), 2);
+
+    dir.entries.sort_by(|a, b| a.name.cmp(&b.name));
+    assert_eq!(dir.entries[0].name, TEST_PACKAGE_1);
+    assert_eq!(dir.entries[1].name, TEST_PACKAGE_2);
+}
+
+#[tokio::test]
 async fn test_project_meta() {
     let mock = start_mock().await;
     mock.add_project(TEST_PROJECT.to_owned());
