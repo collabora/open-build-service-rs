@@ -36,6 +36,108 @@ fn unknown_package(package: &str) -> ApiError {
     )
 }
 
+fn unknown_parameter(param: &str) -> ApiError {
+    ApiError::new(
+        StatusCode::BadRequest,
+        "400".to_owned(),
+        format!("unknown parameter '{}'", param),
+    )
+}
+
+pub(crate) struct ProjectBuildCommandResponder {
+    mock: ObsMock,
+}
+
+impl ProjectBuildCommandResponder {
+    pub fn new(mock: ObsMock) -> Self {
+        ProjectBuildCommandResponder { mock }
+    }
+}
+
+impl Respond for ProjectBuildCommandResponder {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        try_api!(check_auth(self.mock.auth(), request));
+
+        let components = request.url.path_segments().unwrap();
+        let project_name = components.last().unwrap();
+
+        let mut projects = self.mock.projects().write().unwrap();
+        let project = try_api!(projects
+            .get_mut(project_name)
+            .ok_or_else(|| unknown_project(project_name.to_owned())));
+
+        let cmd = try_api!(
+            find_query_param(request, "cmd").ok_or_else(|| ApiError::new(
+                StatusCode::BadRequest,
+                "missing_parameter".to_string(),
+                "Missing parameter 'cmd'".to_string()
+            ))
+        );
+
+        match cmd.as_ref() {
+            "rebuild" => {
+                let mut package_names = Vec::new();
+                for (key, value) in request.url.query_pairs() {
+                    match key.as_ref() {
+                        "cmd" => continue,
+                        "package" => package_names.push(value.clone().into_owned()),
+                        "arch" | "repository" | "code" | "lastbuild" => {
+                            return ApiError::new(
+                                StatusCode::MisdirectedRequest,
+                                "unsupported".to_string(),
+                                "Operation not supported by the OBS mock server".to_owned(),
+                            )
+                            .into_response();
+                        }
+                        _ => {
+                            return unknown_parameter(&key).into_response();
+                        }
+                    }
+                }
+
+                if package_names.is_empty() {
+                    package_names.extend(project.packages.keys().cloned());
+                }
+
+                for package in &package_names {
+                    if !project.packages.contains_key(package) {
+                        // OBS is...strange here, the standard missing package
+                        // error is wrapped *as a string* inside of a different
+                        // error. Mimic the behavior here.
+                        let inner_xml = unknown_package(package).into_xml();
+                        let mut inner = Vec::new();
+                        inner_xml.render(&mut inner, false, true).unwrap();
+
+                        return ApiError::new(
+                            StatusCode::NotFound,
+                            "not_found".to_owned(),
+                            String::from_utf8_lossy(&inner).into_owned(),
+                        )
+                        .into_response();
+                    }
+                }
+
+                for arches in project.repos.values_mut() {
+                    for repo in arches.values_mut() {
+                        for package_name in &package_names {
+                            let package = repo.packages.entry(package_name.clone()).or_default();
+                            package.status = project.rebuild_status.clone();
+                        }
+                    }
+                }
+
+                ResponseTemplate::new(StatusCode::Ok).set_body_xml(build_status_xml("ok", None))
+            }
+            _ => ApiError::new(
+                StatusCode::BadRequest,
+                "illegal_request".to_owned(),
+                format!("unsupported POST command {} to {}", cmd, request.url),
+            )
+            .into_response(),
+        }
+    }
+}
+
 pub(crate) struct RepoListingResponder {
     mock: ObsMock,
 }
@@ -136,15 +238,7 @@ impl Respond for BuildResultsResponder {
 
         let mut package_filters = vec![];
         for (key, value) in request.url.query_pairs() {
-            ensure!(
-                key == "package",
-                ApiError::new(
-                    StatusCode::BadRequest,
-                    "400".to_owned(),
-                    format!("unknown parameter '{}'", key)
-                ),
-            );
-
+            ensure!(key == "package", unknown_parameter(&key));
             package_filters.push(value);
         }
 
@@ -425,14 +519,7 @@ impl Respond for BuildLogResponder {
                     );
                     entry_view = true;
                 }
-                _ => {
-                    return ApiError::new(
-                        StatusCode::BadRequest,
-                        "400".to_owned(),
-                        format!("unknown parameter '{}'", key),
-                    )
-                    .into_response()
-                }
+                _ => return unknown_parameter(&key).into_response(),
             }
         }
 

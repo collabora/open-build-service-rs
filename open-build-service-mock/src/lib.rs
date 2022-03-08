@@ -9,7 +9,8 @@ use api::{
     ArchListingResponder, BuildBinaryFileResponder, BuildBinaryListResponder, BuildLogResponder,
     BuildPackageStatusResponder, BuildResultsResponder, PackageSourceCommandResponder,
     PackageSourceFileResponder, PackageSourceHistoryResponder, PackageSourceListingResponder,
-    PackageSourcePlacementResponder, ProjectMetaResponder, RepoListingResponder,
+    PackageSourcePlacementResponder, ProjectBuildCommandResponder, ProjectMetaResponder,
+    RepoListingResponder,
 };
 
 use http_types::auth::BasicAuth;
@@ -452,6 +453,8 @@ struct MockProject {
 
     rebuild: MockRebuildMode,
     block: MockBlockMode,
+
+    rebuild_status: MockBuildStatus,
 }
 
 type ProjectMap = HashMap<String, MockProject>;
@@ -525,6 +528,12 @@ impl ObsMock {
         Mock::given(method("PUT"))
             .and(path_regex("^/source/[^/]+/[^/]+/[^/]+$"))
             .respond_with(PackageSourcePlacementResponder::new(server.clone()))
+            .mount(&server.inner.server)
+            .await;
+
+        Mock::given(method("POST"))
+            .and(path_regex("^/build/[^/]+$"))
+            .respond_with(ProjectBuildCommandResponder::new(server.clone()))
             .mount(&server.inner.server)
             .await;
 
@@ -734,6 +743,16 @@ impl ObsMock {
         self.with_repo_package(project_name, repo_name, arch, package_name, |package| {
             package.status = status;
         });
+    }
+
+    pub fn set_package_build_status_for_rebuilds(
+        &self,
+        project_name: &str,
+        status: MockBuildStatus,
+    ) {
+        let mut projects = self.inner.projects.write().unwrap();
+        let project = get_project(&mut *projects, project_name);
+        project.rebuild_status = status;
     }
 
     pub fn set_package_binaries(

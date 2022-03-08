@@ -10,14 +10,17 @@ pub(crate) use build::*;
 mod source;
 pub(crate) use source::*;
 
-fn build_status_xml(code: &str, summary: String) -> XMLElement {
+fn build_status_xml(code: &str, summary: Option<String>) -> XMLElement {
     let mut status_xml = XMLElement::new("status");
     status_xml.add_attribute("code", code);
 
-    let mut summary_xml = XMLElement::new("summary");
-    summary_xml.add_text(summary).unwrap();
+    if let Some(summary) = summary {
+        let mut summary_xml = XMLElement::new("summary");
+        summary_xml.add_text(summary).unwrap();
 
-    status_xml.add_child(summary_xml).unwrap();
+        status_xml.add_child(summary_xml).unwrap();
+    }
+
     status_xml
 }
 
@@ -49,9 +52,12 @@ impl ApiError {
         }
     }
 
+    fn into_xml(self) -> XMLElement {
+        build_status_xml(&self.code, Some(self.summary))
+    }
+
     fn into_response(self) -> ResponseTemplate {
-        ResponseTemplate::new(self.http_status)
-            .set_body_xml(build_status_xml(&self.code, self.summary))
+        ResponseTemplate::new(self.http_status).set_body_xml(self.into_xml())
     }
 }
 

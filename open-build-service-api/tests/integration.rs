@@ -881,6 +881,153 @@ async fn test_build_status() {
 }
 
 #[tokio::test]
+async fn test_build_rebuild() {
+    let mock = start_mock().await;
+
+    mock.add_project(TEST_PROJECT.to_owned());
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_1.to_owned(),
+        MockPackageOptions::default(),
+    );
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_2.to_owned(),
+        MockPackageOptions::default(),
+    );
+
+    mock.add_or_update_repository(
+        TEST_PROJECT,
+        TEST_REPO.to_owned(),
+        TEST_ARCH_1.to_owned(),
+        MockRepositoryCode::Building,
+    );
+
+    mock.set_package_build_status(
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        TEST_PACKAGE_1.to_owned(),
+        MockBuildStatus::new(MockPackageCode::Blocked),
+    );
+    mock.set_package_build_status(
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        TEST_PACKAGE_2.to_owned(),
+        MockBuildStatus::new(MockPackageCode::Blocked),
+    );
+    mock.set_package_build_status_for_rebuilds(
+        TEST_PROJECT,
+        MockBuildStatus::new(MockPackageCode::Building),
+    );
+
+    let obs = create_authenticated_client(mock.clone());
+
+    let status = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .status(TEST_REPO, TEST_ARCH_1)
+        .await
+        .unwrap();
+    assert_eq!(status.code, PackageCode::Blocked);
+
+    obs.project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .rebuild()
+        .await
+        .unwrap();
+
+    let status = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .status(TEST_REPO, TEST_ARCH_1)
+        .await
+        .unwrap();
+    assert_eq!(status.code, PackageCode::Building);
+
+    let status = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_2.to_owned())
+        .status(TEST_REPO, TEST_ARCH_1)
+        .await
+        .unwrap();
+    assert_eq!(status.code, PackageCode::Blocked);
+
+    mock.set_package_build_status(
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        TEST_PACKAGE_1.to_owned(),
+        MockBuildStatus::new(MockPackageCode::Blocked),
+    );
+    mock.set_package_build_status(
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        TEST_PACKAGE_2.to_owned(),
+        MockBuildStatus::new(MockPackageCode::Blocked),
+    );
+
+    obs.project(TEST_PROJECT.to_owned())
+        .rebuild(&RebuildFilters::all())
+        .await
+        .unwrap();
+
+    let status = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .status(TEST_REPO, TEST_ARCH_1)
+        .await
+        .unwrap();
+    assert_eq!(status.code, PackageCode::Building);
+
+    let status = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_2.to_owned())
+        .status(TEST_REPO, TEST_ARCH_1)
+        .await
+        .unwrap();
+    assert_eq!(status.code, PackageCode::Building);
+
+    mock.set_package_build_status(
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        TEST_PACKAGE_1.to_owned(),
+        MockBuildStatus::new(MockPackageCode::Blocked),
+    );
+    mock.set_package_build_status(
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        TEST_PACKAGE_2.to_owned(),
+        MockBuildStatus::new(MockPackageCode::Blocked),
+    );
+
+    obs.project(TEST_PROJECT.to_owned())
+        .rebuild(&RebuildFilters::only_package(TEST_PACKAGE_2.to_owned()))
+        .await
+        .unwrap();
+
+    let status = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned())
+        .status(TEST_REPO, TEST_ARCH_1)
+        .await
+        .unwrap();
+    assert_eq!(status.code, PackageCode::Blocked);
+
+    let status = obs
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_2.to_owned())
+        .status(TEST_REPO, TEST_ARCH_1)
+        .await
+        .unwrap();
+    assert_eq!(status.code, PackageCode::Building);
+}
+
+#[tokio::test]
 async fn test_build_logs() {
     let log = MockBuildLog {
         contents: "some log text".to_owned(),

@@ -439,7 +439,7 @@ impl Respond for PackageSourcePlacementResponder {
                 });
 
             ResponseTemplate::new(StatusCode::Ok)
-                .set_body_xml(build_status_xml("ok", "Ok".to_owned()))
+                .set_body_xml(build_status_xml("ok", Some("Ok".to_owned())))
         } else {
             let package = try_api!(project
                 .packages
@@ -690,7 +690,7 @@ fn do_branch(
         .packages
         .insert(target_package_name.to_string(), target_package);
 
-    let mut xml = build_status_xml("ok", "Ok".to_owned());
+    let mut xml = build_status_xml("ok", Some("Ok".to_owned()));
 
     xml.add_child(branch_data_xml(
         "targetproject",
