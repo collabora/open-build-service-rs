@@ -188,7 +188,7 @@ pub struct LinkInfo {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct DirectoryEntry {
+pub struct SourceDirectoryEntry {
     pub name: String,
     pub size: u64,
     pub md5: String,
@@ -200,13 +200,13 @@ pub struct DirectoryEntry {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct Directory {
+pub struct SourceDirectory {
     pub name: String,
     pub rev: Option<String>,
     pub vrev: Option<String>,
     pub srcmd5: String,
     #[serde(default, rename = "entry")]
-    pub entries: Vec<DirectoryEntry>,
+    pub entries: Vec<SourceDirectoryEntry>,
     #[serde(default, rename = "linkinfo")]
     pub linkinfo: Vec<LinkInfo>,
 }
@@ -250,7 +250,7 @@ pub struct MissingEntries {
 
 #[derive(Debug)]
 pub enum CommitResult {
-    Success(Directory),
+    Success(SourceDirectory),
     MissingEntries(MissingEntries),
 }
 
@@ -399,14 +399,14 @@ pub struct BinaryList {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct RepoDirectoryEntry {
+pub struct DirectoryEntry {
     pub name: String,
 }
 
 #[derive(Deserialize, Debug)]
-pub struct RepoDirectory {
-    #[serde(rename = "entry")]
-    pub entries: Vec<RepoDirectoryEntry>,
+pub struct Directory {
+    #[serde(default, rename = "entry")]
+    pub entries: Vec<DirectoryEntry>,
 }
 
 #[derive(Clone, Debug)]
@@ -769,12 +769,12 @@ impl<'a> PackageBuilder<'a> {
         Ok(u)
     }
 
-    pub async fn list(&self, rev: Option<&str>) -> Result<Directory> {
+    pub async fn list(&self, rev: Option<&str>) -> Result<SourceDirectory> {
         let u = self.list_url(rev)?;
         self.client.request(u).await
     }
 
-    pub async fn list_meta(&self, rev: Option<&str>) -> Result<Directory> {
+    pub async fn list_meta(&self, rev: Option<&str>) -> Result<SourceDirectory> {
         let mut u = self.list_url(rev)?;
         u.query_pairs_mut().append_pair("meta", "1");
         self.client.request(u).await
@@ -991,7 +991,7 @@ impl<'a> ProjectBuilder<'a> {
             .push(&self.project);
         Ok(self
             .client
-            .request::<RepoDirectory>(u)
+            .request::<Directory>(u)
             .await?
             .entries
             .into_iter()
@@ -1008,7 +1008,7 @@ impl<'a> ProjectBuilder<'a> {
             .push(repository);
         Ok(self
             .client
-            .request::<RepoDirectory>(u)
+            .request::<Directory>(u)
             .await?
             .entries
             .into_iter()
