@@ -436,6 +436,23 @@ impl<'a> PackageLog<'a> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum BuildCommand {
+    JobStatus,
+    History,
+    Status,
+}
+
+impl AsRef<str> for BuildCommand {
+    fn as_ref(&self) -> &str {
+        match self {
+            BuildCommand::JobStatus => "_jobstatus",
+            BuildCommand::History => "_history",
+            BuildCommand::Status => "_status",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PackageBuilder<'a> {
     pub client: &'a Client,
@@ -444,7 +461,7 @@ pub struct PackageBuilder<'a> {
 }
 
 impl<'a> PackageBuilder<'a> {
-    fn full_request(&self, repository: &str, arch: &str, command: &str) -> Result<Url> {
+    fn full_request(&self, repository: &str, arch: &str, command: BuildCommand) -> Result<Url> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
             .map_err(|_| Error::InvalidUrl)?
@@ -453,7 +470,7 @@ impl<'a> PackageBuilder<'a> {
             .push(repository)
             .push(arch)
             .push(&self.package)
-            .push(command);
+            .push(command.as_ref());
         Ok(u)
     }
 
@@ -487,17 +504,17 @@ impl<'a> PackageBuilder<'a> {
     }
 
     pub async fn jobstatus(&self, repository: &str, arch: &str) -> Result<JobStatus> {
-        let u = self.full_request(repository, arch, "_jobstatus")?;
+        let u = self.full_request(repository, arch, BuildCommand::JobStatus)?;
         self.client.request(u).await
     }
 
     pub async fn history(&self, repository: &str, arch: &str) -> Result<BuildHistory> {
-        let u = self.full_request(repository, arch, "_history")?;
+        let u = self.full_request(repository, arch, BuildCommand::History)?;
         self.client.request(u).await
     }
 
     pub async fn status(&self, repository: &str, arch: &str) -> Result<BuildStatus> {
-        let u = self.full_request(repository, arch, "_status")?;
+        let u = self.full_request(repository, arch, BuildCommand::Status)?;
         self.client.request(u).await
     }
 
