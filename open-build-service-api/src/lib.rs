@@ -1072,6 +1072,10 @@ impl Client {
         }
     }
 
+    pub fn url(&self) -> &Url {
+        &self.base
+    }
+
     pub fn project(&self, project: String) -> ProjectBuilder {
         ProjectBuilder {
             client: self,
