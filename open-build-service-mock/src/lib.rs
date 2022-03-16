@@ -66,13 +66,37 @@ pub struct MockSourceFile {
 impl MockSourceFile {
     const META_PATH: &'static str = "_meta";
 
-    pub fn new_metadata(project: &str, package: &str) -> MockSourceFile {
+    pub fn new_metadata(
+        project: &str,
+        package: &str,
+        disabled: &[MockPackageDisabledBuild],
+    ) -> MockSourceFile {
         let mut xml = XMLElement::new("package");
-        xml.add_attribute("name", project);
-        xml.add_attribute("project", package);
+        xml.add_attribute("project", project);
+        xml.add_attribute("name", package);
 
         xml.add_child(XMLElement::new("title")).unwrap();
         xml.add_child(XMLElement::new("description")).unwrap();
+
+        if !disabled.is_empty() {
+            let mut build_xml = XMLElement::new("build");
+
+            for disabled_build in disabled {
+                let mut disable_xml = XMLElement::new("disable");
+
+                if let Some(repository) = &disabled_build.repository {
+                    disable_xml.add_attribute("repository", repository);
+                }
+
+                if let Some(arch) = &disabled_build.arch {
+                    disable_xml.add_attribute("arch", arch);
+                }
+
+                build_xml.add_child(disable_xml).unwrap();
+            }
+
+            xml.add_child(build_xml).unwrap();
+        }
 
         let mut contents = vec![];
         xml.render(&mut contents, false, true).unwrap();
@@ -194,18 +218,26 @@ impl Default for MockPackageCode {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct MockPackageDisabledBuild {
+    pub repository: Option<String>,
+    pub arch: Option<String>,
+}
+
 pub struct MockPackageOptions {
-    pub initial_meta_srcmd5: String,
+    pub meta_srcmd5: String,
     pub time: SystemTime,
     pub user: String,
+    pub disabled: Vec<MockPackageDisabledBuild>,
 }
 
 impl Default for MockPackageOptions {
     fn default() -> Self {
         Self {
-            initial_meta_srcmd5: random_md5(),
+            meta_srcmd5: random_md5(),
             time: SystemTime::now(),
             user: ADMIN_USER.to_owned(),
+            disabled: Vec::new(),
         }
     }
 }
@@ -215,6 +247,7 @@ struct MockPackage {
     revisions: Vec<MockRevision>,
     meta_revisions: Vec<MockRevision>,
     latest_vrevs: HashMap<Option<String>, usize>,
+    disabled: Vec<MockPackageDisabledBuild>,
 }
 
 impl MockPackage {
@@ -224,7 +257,8 @@ impl MockPackage {
         options: MockPackageOptions,
     ) -> MockPackage {
         let (meta_key, meta_contents) =
-            MockSourceFile::new_metadata(project_name, package_name).into_key_and_contents();
+            MockSourceFile::new_metadata(project_name, package_name, &options.disabled)
+                .into_key_and_contents();
         let meta_entry = MockEntry::from_key(&meta_key, options.time);
         MockPackage {
             files: [(meta_key, meta_contents)].into(),
@@ -232,7 +266,7 @@ impl MockPackage {
             meta_revisions: vec![MockRevision {
                 vrev: None,
                 options: MockRevisionOptions {
-                    srcmd5: options.initial_meta_srcmd5,
+                    srcmd5: options.meta_srcmd5,
                     version: None,
                     time: options.time,
                     user: options.user,
@@ -242,6 +276,7 @@ impl MockPackage {
                 linkinfo: vec![],
             }],
             latest_vrevs: HashMap::new(),
+            disabled: options.disabled,
         }
     }
 
@@ -253,23 +288,28 @@ impl MockPackage {
         branched_package_name: &str,
         options: MockBranchOptions,
     ) -> MockPackage {
-        let (meta_key, meta_contents) =
-            MockSourceFile::new_metadata(branched_project_name, branched_package_name)
-                .into_key_and_contents();
-        let meta_entry = MockEntry::from_key(&meta_key, options.time);
-
-        let (mut files, entries, origin_srcmd5) = if let Some((origin, origin_rev)) =
+        let (mut files, entries, origin_srcmd5, disabled) = if let Some((origin, origin_rev)) =
             origin.and_then(|origin| origin.revisions.last().map(|rev| (origin, rev)))
         {
             (
                 origin.files.clone(),
                 origin_rev.entries.clone(),
                 origin_rev.options.srcmd5.clone(),
+                origin.disabled.clone(),
             )
         } else {
-            (HashMap::new(), HashMap::new(), ZERO_REV_SRCMD5.to_owned())
+            (
+                HashMap::new(),
+                HashMap::new(),
+                ZERO_REV_SRCMD5.to_owned(),
+                Vec::new(),
+            )
         };
 
+        let (meta_key, meta_contents) =
+            MockSourceFile::new_metadata(branched_project_name, branched_package_name, &disabled)
+                .into_key_and_contents();
+        let meta_entry = MockEntry::from_key(&meta_key, options.time);
         files.insert(meta_key, meta_contents);
 
         let linkinfo = MockLinkInfo {
@@ -312,6 +352,7 @@ impl MockPackage {
                 entries: [(MockSourceFile::META_PATH.to_owned(), meta_entry)].into(),
             }],
             latest_vrevs,
+            disabled,
         }
     }
 
@@ -639,6 +680,38 @@ impl ObsMock {
         let project = get_project(&mut *projects, project_name);
         let package = MockPackage::new_with_metadata(project_name, &package_name, options);
         project.packages.insert(package_name, package);
+    }
+
+    pub fn set_package_metadata(
+        &self,
+        project_name: &str,
+        package_name: &str,
+        options: MockPackageOptions,
+    ) {
+        let mut projects = self.inner.projects.write().unwrap();
+        let project = projects
+            .get_mut(project_name)
+            .unwrap_or_else(|| panic!("Unknown project: {}", project_name));
+        let package = get_package(project, package_name);
+
+        let meta = MockSourceFile::new_metadata(project_name, package_name, &options.disabled);
+        let (key, contents) = meta.into_key_and_contents();
+        package.files.insert(key.clone(), contents);
+
+        let meta_entry = MockEntry::from_key(&key, options.time);
+
+        package.meta_revisions.push(MockRevision {
+            vrev: None,
+            options: MockRevisionOptions {
+                srcmd5: options.meta_srcmd5,
+                version: None,
+                time: options.time,
+                user: options.user,
+                comment: None,
+            },
+            entries: [(MockSourceFile::META_PATH.to_owned(), meta_entry)].into(),
+            linkinfo: vec![],
+        });
     }
 
     pub fn add_package_files(

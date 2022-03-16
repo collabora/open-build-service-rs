@@ -361,6 +361,28 @@ impl<'de> Deserialize<'de> for BranchStatus {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct PackageBuildMetaDisable {
+    #[serde(default)]
+    pub repository: Option<String>,
+    #[serde(default)]
+    pub arch: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Default)]
+pub struct PackageBuildMeta {
+    #[serde(rename = "disable")]
+    pub disabled: Vec<PackageBuildMetaDisable>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct PackageMeta {
+    pub name: String,
+    pub project: String,
+    #[serde(default)]
+    pub build: PackageBuildMeta,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct ResultListResult {
     pub project: String,
     pub repository: String,
@@ -777,6 +799,17 @@ impl<'a> PackageBuilder<'a> {
     pub async fn list_meta(&self, rev: Option<&str>) -> Result<SourceDirectory> {
         let mut u = self.list_url(rev)?;
         u.query_pairs_mut().append_pair("meta", "1");
+        self.client.request(u).await
+    }
+
+    pub async fn meta(&self) -> Result<PackageMeta> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push(&self.package)
+            .push("_meta");
         self.client.request(u).await
     }
 

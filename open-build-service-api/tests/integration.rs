@@ -309,6 +309,60 @@ async fn test_source_list() {
 }
 
 #[tokio::test]
+async fn test_source_meta() {
+    let mock = start_mock().await;
+    mock.add_project(TEST_PROJECT.to_owned());
+
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_1.to_owned(),
+        MockPackageOptions::default(),
+    );
+
+    let client = create_authenticated_client(mock.clone());
+
+    let package_1 = client
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned());
+
+    let meta = package_1.meta().await.unwrap();
+    assert_eq!(meta.project, TEST_PROJECT);
+    assert_eq!(meta.name, TEST_PACKAGE_1);
+    assert_eq!(meta.build.disabled.len(), 0);
+
+    mock.set_package_metadata(
+        TEST_PROJECT,
+        TEST_PACKAGE_1,
+        MockPackageOptions {
+            disabled: vec![
+                MockPackageDisabledBuild {
+                    arch: Some(TEST_ARCH_1.to_owned()),
+                    ..Default::default()
+                },
+                MockPackageDisabledBuild {
+                    repository: Some(TEST_REPO.to_owned()),
+                    arch: Some(TEST_ARCH_2.to_owned()),
+                },
+            ],
+            ..Default::default()
+        },
+    );
+
+    let meta = package_1.meta().await.unwrap();
+    assert_eq!(meta.project, TEST_PROJECT);
+    assert_eq!(meta.name, TEST_PACKAGE_1);
+    assert_eq!(meta.build.disabled.len(), 2);
+
+    assert_eq!(meta.build.disabled[0].repository.as_deref(), None);
+    assert_eq!(meta.build.disabled[0].arch.as_deref(), Some(TEST_ARCH_1));
+    assert_eq!(
+        meta.build.disabled[1].repository.as_deref(),
+        Some(TEST_REPO)
+    );
+    assert_eq!(meta.build.disabled[1].arch.as_deref(), Some(TEST_ARCH_2));
+}
+
+#[tokio::test]
 async fn test_source_get() {
     let test_file = "test";
     let test_contents = b"some file contents here";
