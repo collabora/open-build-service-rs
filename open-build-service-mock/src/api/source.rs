@@ -494,9 +494,10 @@ impl Respond for PackageSourcePlacementResponder {
                         project_name,
                         package_name,
                         MockPackageOptions {
-                            initial_meta_srcmd5: random_md5(),
+                            meta_srcmd5: random_md5(),
                             time: SystemTime::now(),
                             user: self.mock.auth().username().to_owned(),
+                            ..Default::default()
                         },
                     )
                 });

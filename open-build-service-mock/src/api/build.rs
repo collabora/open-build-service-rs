@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::time::SystemTime;
 
 use wiremock::ResponseTemplate;
@@ -99,12 +100,16 @@ impl Respond for ProjectBuildCommandResponder {
                     package_names.extend(project.packages.keys().cloned());
                 }
 
-                for package in &package_names {
-                    if !project.packages.contains_key(package) {
+                let mut packages = HashMap::new();
+
+                for package_name in &package_names {
+                    if let Some(package) = project.packages.get(package_name) {
+                        packages.insert(package_name, package);
+                    } else {
                         // OBS is...strange here, the standard missing package
                         // error is wrapped *as a string* inside of a different
                         // error. Mimic the behavior here.
-                        let inner_xml = unknown_package(package).into_xml();
+                        let inner_xml = unknown_package(package_name).into_xml();
                         let mut inner = Vec::new();
                         inner_xml.render(&mut inner, false, true).unwrap();
 
@@ -117,11 +122,22 @@ impl Respond for ProjectBuildCommandResponder {
                     }
                 }
 
-                for arches in project.repos.values_mut() {
-                    for repo in arches.values_mut() {
-                        for package_name in &package_names {
-                            let package = repo.packages.entry(package_name.clone()).or_default();
-                            package.status = project.rebuild_status.clone();
+                for (repo_name, arches) in &mut project.repos {
+                    for (arch, repo) in arches {
+                        for (package_name, package) in &packages {
+                            for disabled in &package.disabled {
+                                if (disabled.repository.is_none()
+                                    || disabled.repository.as_deref() == Some(repo_name))
+                                    && (disabled.arch.is_none()
+                                        || disabled.arch.as_deref() == Some(arch))
+                                {
+                                    continue;
+                                }
+                            }
+
+                            let repo_package =
+                                repo.packages.entry((*package_name).clone()).or_default();
+                            repo_package.status = project.rebuild_status.clone();
                         }
                     }
                 }
