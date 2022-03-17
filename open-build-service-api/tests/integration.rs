@@ -1026,6 +1026,78 @@ async fn test_build_rebuild() {
 }
 
 #[tokio::test]
+async fn test_build_history() {
+    let mock = start_mock().await;
+
+    let rev = "6";
+    let srcmd5 = random_md5();
+    let versrel = "0.0.1-1";
+    let bcnt = 2;
+    let time = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
+    let duration = Duration::from_secs(15);
+
+    mock.add_project(TEST_PROJECT.to_owned());
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_1.to_owned(),
+        MockPackageOptions::default(),
+    );
+
+    mock.add_or_update_repository(
+        TEST_PROJECT,
+        TEST_REPO.to_owned(),
+        TEST_ARCH_1.to_owned(),
+        MockRepositoryCode::Finished,
+    );
+    mock.set_package_build_status(
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        TEST_PACKAGE_1.to_owned(),
+        MockBuildStatus::new(MockPackageCode::Finished),
+    );
+
+    let client = create_authenticated_client(mock.clone());
+    let package_1 = client
+        .project(TEST_PROJECT.to_owned())
+        .package(TEST_PACKAGE_1.to_owned());
+
+    let history = package_1.history(TEST_REPO, TEST_ARCH_1).await.unwrap();
+    assert_eq!(history.entries.len(), 0);
+
+    mock.add_build_history(
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        TEST_PACKAGE_1.to_owned(),
+        MockBuildHistoryEntry {
+            rev: rev.to_owned(),
+            srcmd5: srcmd5.clone(),
+            versrel: versrel.to_owned(),
+            bcnt,
+            time,
+            duration,
+        },
+    );
+
+    let history = package_1.history(TEST_REPO, TEST_ARCH_1).await.unwrap();
+    assert_eq!(history.entries.len(), 1);
+
+    assert_eq!(history.entries[0].rev, rev);
+    assert_eq!(history.entries[0].srcmd5, srcmd5);
+    assert_eq!(history.entries[0].versrel, versrel);
+    assert_eq!(history.entries[0].bcnt, bcnt.to_string());
+    assert_eq!(
+        history.entries[0].time,
+        time.duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            .to_string()
+    );
+    assert_eq!(history.entries[0].duration, duration.as_secs().to_string());
+}
+
+#[tokio::test]
 async fn test_build_logs() {
     let log = MockBuildLog {
         contents: "some log text".to_owned(),

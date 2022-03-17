@@ -614,3 +614,70 @@ impl Respond for BuildLogResponder {
         }
     }
 }
+
+pub(crate) struct BuildHistoryResponder {
+    mock: ObsMock,
+}
+
+impl BuildHistoryResponder {
+    pub fn new(mock: ObsMock) -> BuildHistoryResponder {
+        BuildHistoryResponder { mock }
+    }
+}
+
+impl Respond for BuildHistoryResponder {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        try_api!(check_auth(self.mock.auth(), request));
+
+        let mut components = request.url.path_segments().unwrap();
+        let package_name = components.nth_back(1).unwrap();
+        let arch = components.nth_back(0).unwrap();
+        let repo_name = components.nth_back(0).unwrap();
+        let project_name = components.nth_back(0).unwrap();
+
+        if let Some((param, _)) = request.url.query_pairs().next() {
+            return unknown_parameter(&param).into_response();
+        }
+
+        let projects = self.mock.projects().read().unwrap();
+
+        let project = try_api!(projects
+            .get(project_name)
+            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let arches = try_api!(project
+            .repos
+            .get(repo_name)
+            .ok_or_else(|| unknown_repo(project_name, repo_name)));
+        let arch =
+            try_api!(arches
+                .get(arch)
+                .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
+        let package = try_api!(arch
+            .packages
+            .get(package_name)
+            .ok_or_else(|| unknown_package(package_name)));
+
+        let mut xml = XMLElement::new("buildhistory");
+        for entry in &package.history {
+            let mut entry_xml = XMLElement::new("entry");
+            entry_xml.add_attribute("rev", &entry.rev);
+            entry_xml.add_attribute("srcmd5", &entry.srcmd5);
+            entry_xml.add_attribute("versrel", &entry.versrel);
+            entry_xml.add_attribute("bcnt", &entry.bcnt.to_string());
+            entry_xml.add_attribute(
+                "time",
+                &entry
+                    .time
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+                    .to_string(),
+            );
+            entry_xml.add_attribute("duration", &entry.duration.as_secs().to_string());
+
+            xml.add_child(entry_xml).unwrap();
+        }
+
+        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+    }
+}

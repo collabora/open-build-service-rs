@@ -2,15 +2,16 @@ use std::{
     borrow::Cow,
     collections::HashMap,
     sync::{Arc, RwLock},
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 use api::{
-    ArchListingResponder, BuildBinaryFileResponder, BuildBinaryListResponder, BuildLogResponder,
-    BuildPackageStatusResponder, BuildResultsResponder, PackageSourceCommandResponder,
-    PackageSourceDeleteResponder, PackageSourceFileResponder, PackageSourceHistoryResponder,
-    PackageSourceListingResponder, PackageSourcePlacementResponder, ProjectBuildCommandResponder,
-    ProjectDeleteResponder, ProjectListingResponder, ProjectMetaResponder, RepoListingResponder,
+    ArchListingResponder, BuildBinaryFileResponder, BuildBinaryListResponder,
+    BuildHistoryResponder, BuildLogResponder, BuildPackageStatusResponder, BuildResultsResponder,
+    PackageSourceCommandResponder, PackageSourceDeleteResponder, PackageSourceFileResponder,
+    PackageSourceHistoryResponder, PackageSourceListingResponder, PackageSourcePlacementResponder,
+    ProjectBuildCommandResponder, ProjectDeleteResponder, ProjectListingResponder,
+    ProjectMetaResponder, RepoListingResponder,
 };
 
 use http_types::auth::BasicAuth;
@@ -443,6 +444,29 @@ impl MockBuildLog {
     }
 }
 
+#[derive(Clone)]
+pub struct MockBuildHistoryEntry {
+    pub rev: String,
+    pub srcmd5: String,
+    pub versrel: String,
+    pub bcnt: u32,
+    pub time: SystemTime,
+    pub duration: Duration,
+}
+
+impl Default for MockBuildHistoryEntry {
+    fn default() -> Self {
+        Self {
+            rev: "1".to_owned(),
+            srcmd5: random_md5(),
+            versrel: "0".to_owned(),
+            bcnt: 1,
+            time: SystemTime::now(),
+            duration: Duration::ZERO,
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 struct MockRepositoryPackage {
     status: MockBuildStatus,
@@ -451,6 +475,8 @@ struct MockRepositoryPackage {
 
     latest_log: Option<MockBuildLog>,
     latest_successful_log: Option<MockBuildLog>,
+
+    history: Vec<MockBuildHistoryEntry>,
 }
 
 #[derive(Clone)]
@@ -617,6 +643,12 @@ impl ObsMock {
         Mock::given(method("GET"))
             .and(path_regex("^/build/[^/]+/[^/]+/[^/]+/[^/]+$"))
             .respond_with(BuildBinaryListResponder::new(server.clone()))
+            .mount(&server.inner.server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path_regex("^/build/[^/]+/[^/]+/[^/]+/[^/]+/_history$"))
+            .respond_with(BuildHistoryResponder::new(server.clone()))
             .mount(&server.inner.server)
             .await;
 
@@ -874,6 +906,19 @@ impl ObsMock {
             }
 
             package.latest_log = Some(log);
+        });
+    }
+
+    pub fn add_build_history(
+        &self,
+        project_name: &str,
+        repo_name: &str,
+        arch: &str,
+        package_name: String,
+        entry: MockBuildHistoryEntry,
+    ) {
+        self.with_repo_package(project_name, repo_name, arch, package_name, |package| {
+            package.history.push(entry);
         });
     }
 }
