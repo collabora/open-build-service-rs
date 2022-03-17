@@ -168,11 +168,12 @@ pub struct BuildHistoryEntry {
     pub versrel: String,
     pub bcnt: String,
     pub time: String,
+    pub duration: String,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct BuildHistory {
-    #[serde(rename = "entry")]
+    #[serde(default, rename = "entry")]
     pub entries: Vec<BuildHistoryEntry>,
 }
 
