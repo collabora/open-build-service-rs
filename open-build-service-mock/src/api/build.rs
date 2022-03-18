@@ -6,7 +6,7 @@ use wiremock::ResponseTemplate;
 use wiremock::{Request, Respond};
 use xml_builder::XMLElement;
 
-use crate::{MockBuildStatus, ObsMock};
+use crate::{MockBuildStatus, MockPackageCode, ObsMock};
 
 use super::*;
 
@@ -263,6 +263,13 @@ impl Respond for BuildResultsResponder {
             .get(project_name)
             .ok_or_else(|| unknown_project(project_name.to_owned())));
 
+        for package_name in &package_filters {
+            ensure!(
+                project.packages.contains_key(package_name.as_ref()),
+                unknown_package(package_name)
+            );
+        }
+
         let mut xml = XMLElement::new("resultlist");
         // Using a random 'state' value for now, need to figure out how
         // these are computed.
@@ -286,13 +293,11 @@ impl Respond for BuildResultsResponder {
                     }
                 } else {
                     for package_name in &package_filters {
-                        let package = try_api!(repo
-                            .packages
-                            .get(package_name.as_ref())
-                            .ok_or_else(|| unknown_package(package_name.as_ref())));
-                        result_xml
-                            .add_child(package_status_xml(package_name, &package.status))
-                            .unwrap();
+                        if let Some(package) = repo.packages.get(package_name.as_ref()) {
+                            result_xml
+                                .add_child(package_status_xml(package_name, &package.status))
+                                .unwrap();
+                        }
                     }
                 }
 
@@ -329,6 +334,11 @@ impl Respond for BuildBinaryListResponder {
         let project = try_api!(projects
             .get(project_name)
             .ok_or_else(|| unknown_project(project_name.to_owned())));
+        ensure!(
+            project.packages.contains_key(package_name),
+            unknown_package(package_name)
+        );
+
         let arches = try_api!(project
             .repos
             .get(repo_name)
@@ -337,27 +347,25 @@ impl Respond for BuildBinaryListResponder {
             try_api!(arches
                 .get(arch)
                 .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
-        let package = try_api!(arch
-            .packages
-            .get(package_name)
-            .ok_or_else(|| unknown_package(package_name)));
 
         let mut xml = XMLElement::new("binarylist");
-        for (name, binary) in &package.binaries {
-            let mut binary_xml = XMLElement::new("binary");
-            binary_xml.add_attribute("filename", name);
-            binary_xml.add_attribute("size", &binary.contents.len().to_string());
-            binary_xml.add_attribute(
-                "mtime",
-                &binary
-                    .mtime
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs()
-                    .to_string(),
-            );
+        if let Some(package) = arch.packages.get(package_name) {
+            for (name, binary) in &package.binaries {
+                let mut binary_xml = XMLElement::new("binary");
+                binary_xml.add_attribute("filename", name);
+                binary_xml.add_attribute("size", &binary.contents.len().to_string());
+                binary_xml.add_attribute(
+                    "mtime",
+                    &binary
+                        .mtime
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs()
+                        .to_string(),
+                );
 
-            xml.add_child(binary_xml).unwrap();
+                xml.add_child(binary_xml).unwrap();
+            }
         }
 
         ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
@@ -390,6 +398,11 @@ impl Respond for BuildBinaryFileResponder {
         let project = try_api!(projects
             .get(project_name)
             .ok_or_else(|| unknown_project(project_name.to_owned())));
+        ensure!(
+            project.packages.contains_key(package_name),
+            unknown_package(package_name)
+        );
+
         let arches = try_api!(project
             .repos
             .get(repo_name)
@@ -398,16 +411,15 @@ impl Respond for BuildBinaryFileResponder {
             try_api!(arches
                 .get(arch)
                 .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
-        let package = try_api!(arch
-            .packages
-            .get(package_name)
-            .ok_or_else(|| unknown_package(package_name)));
+        let package = arch.packages.get(package_name);
 
-        let file = try_api!(package.binaries.get(file_name).ok_or_else(|| ApiError::new(
-            StatusCode::NotFound,
-            "404".to_owned(),
-            format!("{}: No such file or directory", file_name)
-        )));
+        let file = try_api!(package
+            .and_then(|package| package.binaries.get(file_name))
+            .ok_or_else(|| ApiError::new(
+                StatusCode::NotFound,
+                "404".to_owned(),
+                format!("{}: No such file or directory", file_name)
+            )));
         ResponseTemplate::new(StatusCode::Ok)
             .set_body_raw(file.contents.clone(), "application/octet-stream")
     }
@@ -438,6 +450,11 @@ impl Respond for BuildPackageStatusResponder {
         let project = try_api!(projects
             .get(project_name)
             .ok_or_else(|| unknown_project(project_name.to_owned())));
+        ensure!(
+            project.packages.contains_key(package_name),
+            unknown_package(package_name)
+        );
+
         let arches = try_api!(project
             .repos
             .get(repo_name)
@@ -446,13 +463,17 @@ impl Respond for BuildPackageStatusResponder {
             try_api!(arches
                 .get(arch)
                 .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
-        let package = try_api!(arch
-            .packages
-            .get(package_name)
-            .ok_or_else(|| unknown_package(package_name)));
 
-        ResponseTemplate::new(StatusCode::Ok)
-            .set_body_xml(package_status_xml(package_name, &package.status))
+        let package = arch.packages.get(package_name);
+        ResponseTemplate::new(StatusCode::Ok).set_body_xml(package.map_or_else(
+            || {
+                package_status_xml(
+                    package_name,
+                    &MockBuildStatus::new(MockPackageCode::Disabled),
+                )
+            },
+            |package| package_status_xml(package_name, &package.status),
+        ))
     }
 }
 
@@ -550,6 +571,11 @@ impl Respond for BuildLogResponder {
         let project = try_api!(projects
             .get(project_name)
             .ok_or_else(|| unknown_project(project_name.to_owned())));
+        ensure!(
+            project.packages.contains_key(package_name),
+            unknown_package(package_name)
+        );
+
         let arches = try_api!(project
             .repos
             .get(repo_name)
@@ -558,10 +584,11 @@ impl Respond for BuildLogResponder {
             try_api!(arches
                 .get(arch)
                 .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
-        let package = try_api!(arch
-            .packages
-            .get(package_name)
-            .ok_or_else(|| unknown_package(package_name)));
+        let package = try_api!(arch.packages.get(package_name).ok_or_else(|| ApiError::new(
+            StatusCode::BadRequest,
+            "400".to_owned(),
+            format!("remote error: {} no logfile", package_name)
+        )));
 
         let log = if last_successful {
             &package.latest_successful_log
@@ -644,6 +671,11 @@ impl Respond for BuildHistoryResponder {
         let project = try_api!(projects
             .get(project_name)
             .ok_or_else(|| unknown_project(project_name.to_owned())));
+        ensure!(
+            project.packages.contains_key(package_name),
+            unknown_package(package_name)
+        );
+
         let arches = try_api!(project
             .repos
             .get(repo_name)
@@ -652,30 +684,29 @@ impl Respond for BuildHistoryResponder {
             try_api!(arches
                 .get(arch)
                 .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
-        let package = try_api!(arch
-            .packages
-            .get(package_name)
-            .ok_or_else(|| unknown_package(package_name)));
 
         let mut xml = XMLElement::new("buildhistory");
-        for entry in &package.history {
-            let mut entry_xml = XMLElement::new("entry");
-            entry_xml.add_attribute("rev", &entry.rev);
-            entry_xml.add_attribute("srcmd5", &entry.srcmd5);
-            entry_xml.add_attribute("versrel", &entry.versrel);
-            entry_xml.add_attribute("bcnt", &entry.bcnt.to_string());
-            entry_xml.add_attribute(
-                "time",
-                &entry
-                    .time
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs()
-                    .to_string(),
-            );
-            entry_xml.add_attribute("duration", &entry.duration.as_secs().to_string());
 
-            xml.add_child(entry_xml).unwrap();
+        if let Some(package) = arch.packages.get(package_name) {
+            for entry in &package.history {
+                let mut entry_xml = XMLElement::new("entry");
+                entry_xml.add_attribute("rev", &entry.rev);
+                entry_xml.add_attribute("srcmd5", &entry.srcmd5);
+                entry_xml.add_attribute("versrel", &entry.versrel);
+                entry_xml.add_attribute("bcnt", &entry.bcnt.to_string());
+                entry_xml.add_attribute(
+                    "time",
+                    &entry
+                        .time
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap()
+                        .as_secs()
+                        .to_string(),
+                );
+                entry_xml.add_attribute("duration", &entry.duration.as_secs().to_string());
+
+                xml.add_child(entry_xml).unwrap();
+            }
         }
 
         ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
