@@ -750,6 +750,17 @@ async fn test_build_results() {
     assert_eq!(package2_status.code, PackageCode::Broken);
     assert!(package2_status.dirty);
 
+    let results = package_2.result().await.unwrap();
+    let (arch1_repo, arch2_repo) = get_results_by_arch(results);
+
+    assert_eq!(arch1_repo.statuses.len(), 0);
+    assert_eq!(arch2_repo.statuses.len(), 1);
+
+    let package2_status = &arch2_repo.statuses[0];
+    assert_eq!(package2_status.package, TEST_PACKAGE_2);
+    assert_eq!(package2_status.code, PackageCode::Broken);
+    assert!(package2_status.dirty);
+
     mock.set_package_build_status(
         TEST_PROJECT,
         TEST_REPO,
