@@ -674,6 +674,322 @@ async fn test_build_repo_listing() {
 }
 
 #[tokio::test]
+async fn test_build_jobhist() {
+    let mock = start_mock().await;
+
+    let rev_1_1 = "1";
+    let srcmd5_1_1 = random_md5();
+    let versrel_1_1 = "1.2-3";
+    let readytime_1_1 = 123;
+    let starttime_1_1 = 456;
+    let endtime_1_1 = 789;
+    let uri_1_1 = "http://127.0.0.1:9011";
+    let worker_1_1 = "worker:1";
+    let reason_1_1 = "reason 1";
+    let verifymd5_1_1 = random_md5();
+
+    let rev_1_2 = "2";
+    let srcmd5_1_2 = random_md5();
+    let versrel_1_2 = "3.2-1";
+    let readytime_1_2 = 321;
+    let starttime_1_2 = 654;
+    let endtime_1_2 = 987;
+    let uri_1_2 = "http://127.0.0.1:9012";
+    let worker_1_2 = "worker:2";
+    let reason_1_2 = "reason 2";
+    let verifymd5_1_2 = random_md5();
+
+    let rev_2_1 = "2";
+    let srcmd5_2_1 = random_md5();
+    let versrel_2_1 = "1.3-2";
+    let readytime_2_1 = 132;
+    let starttime_2_1 = 465;
+    let endtime_2_1 = 798;
+    let uri_2_1 = "http://127.0.0.1:9021";
+    let worker_2_1 = "worker:3";
+    let reason_2_1 = "reason 3";
+    let verifymd5_2_1 = random_md5();
+
+    let rev_2_2 = "2";
+    let srcmd5_2_2 = random_md5();
+    let versrel_2_2 = "3.1-2";
+    let readytime_2_2 = 312;
+    let starttime_2_2 = 645;
+    let endtime_2_2 = 978;
+    let uri_2_2 = "http://127.0.0.1:9022";
+    let worker_2_2 = "worker:4";
+    let reason_2_2 = "reason 4";
+    let verifymd5_2_2 = random_md5();
+
+    mock.add_project(TEST_PROJECT.to_owned());
+    mock.add_or_update_repository(
+        TEST_PROJECT,
+        TEST_REPO.to_owned(),
+        TEST_ARCH_1.to_owned(),
+        MockRepositoryCode::Building,
+    );
+    mock.add_or_update_repository(
+        TEST_PROJECT,
+        TEST_REPO.to_owned(),
+        TEST_ARCH_2.to_owned(),
+        MockRepositoryCode::Building,
+    );
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_1.to_owned(),
+        MockPackageOptions::default(),
+    );
+    mock.add_new_package(
+        TEST_PROJECT,
+        TEST_PACKAGE_2.to_owned(),
+        MockPackageOptions::default(),
+    );
+
+    mock.add_job_history(
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        MockJobHistoryEntry {
+            package: TEST_PACKAGE_1.to_owned(),
+            rev: rev_1_1.to_owned(),
+            srcmd5: srcmd5_1_1.clone(),
+            versrel: versrel_1_1.to_owned(),
+            bcnt: 1,
+            readytime: SystemTime::UNIX_EPOCH + Duration::from_secs(readytime_1_1),
+            starttime: SystemTime::UNIX_EPOCH + Duration::from_secs(starttime_1_1),
+            endtime: SystemTime::UNIX_EPOCH + Duration::from_secs(endtime_1_1),
+            code: MockPackageCode::Failed,
+            uri: uri_1_1.to_owned(),
+            workerid: worker_1_1.to_owned(),
+            hostarch: TEST_ARCH_1.to_string(),
+            reason: reason_1_1.to_owned(),
+            verifymd5: verifymd5_1_1.clone(),
+        },
+    );
+
+    mock.add_job_history(
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_2,
+        MockJobHistoryEntry {
+            package: TEST_PACKAGE_1.to_owned(),
+            rev: rev_1_2.to_owned(),
+            srcmd5: srcmd5_1_2.clone(),
+            versrel: versrel_1_2.to_owned(),
+            bcnt: 12,
+            readytime: SystemTime::UNIX_EPOCH + Duration::from_secs(readytime_1_2),
+            starttime: SystemTime::UNIX_EPOCH + Duration::from_secs(starttime_1_2),
+            endtime: SystemTime::UNIX_EPOCH + Duration::from_secs(endtime_1_2),
+            code: MockPackageCode::Succeeded,
+            uri: uri_1_2.to_owned(),
+            workerid: worker_1_2.to_owned(),
+            hostarch: TEST_ARCH_2.to_string(),
+            reason: reason_1_2.to_owned(),
+            verifymd5: verifymd5_1_2.clone(),
+        },
+    );
+
+    mock.add_job_history(
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        MockJobHistoryEntry {
+            package: TEST_PACKAGE_2.to_owned(),
+            rev: rev_2_1.to_owned(),
+            srcmd5: srcmd5_2_1.clone(),
+            versrel: versrel_2_1.to_owned(),
+            bcnt: 21,
+            readytime: SystemTime::UNIX_EPOCH + Duration::from_secs(readytime_2_1),
+            starttime: SystemTime::UNIX_EPOCH + Duration::from_secs(starttime_2_1),
+            endtime: SystemTime::UNIX_EPOCH + Duration::from_secs(endtime_2_1),
+            code: MockPackageCode::Succeeded,
+            uri: uri_2_1.to_owned(),
+            workerid: worker_2_1.to_owned(),
+            hostarch: TEST_ARCH_2.to_string(),
+            reason: reason_2_1.to_owned(),
+            verifymd5: verifymd5_2_1.clone(),
+        },
+    );
+
+    mock.add_job_history(
+        TEST_PROJECT,
+        TEST_REPO,
+        TEST_ARCH_1,
+        MockJobHistoryEntry {
+            package: TEST_PACKAGE_2.to_owned(),
+            rev: rev_2_2.to_owned(),
+            srcmd5: srcmd5_2_2.clone(),
+            versrel: versrel_2_2.to_owned(),
+            bcnt: 22,
+            readytime: SystemTime::UNIX_EPOCH + Duration::from_secs(readytime_2_2),
+            starttime: SystemTime::UNIX_EPOCH + Duration::from_secs(starttime_2_2),
+            endtime: SystemTime::UNIX_EPOCH + Duration::from_secs(endtime_2_2),
+            code: MockPackageCode::Failed,
+            uri: uri_2_2.to_owned(),
+            workerid: worker_2_2.to_owned(),
+            hostarch: TEST_ARCH_1.to_string(),
+            reason: reason_2_2.to_owned(),
+            verifymd5: verifymd5_2_2.clone(),
+        },
+    );
+
+    let obs = create_authenticated_client(mock.clone());
+    let project = obs.project(TEST_PROJECT.to_owned());
+
+    let mut jobhist = project
+        .jobhistory(TEST_REPO, TEST_ARCH_1, &JobHistoryFilters::empty())
+        .await
+        .unwrap();
+
+    assert_eq!(jobhist.jobhist.len(), 3);
+    jobhist.jobhist.sort_by(|a, b| a.package.cmp(&b.package));
+
+    assert_eq!(jobhist.jobhist[0].package, TEST_PACKAGE_1);
+    assert_eq!(jobhist.jobhist[0].rev, rev_1_1);
+    assert_eq!(jobhist.jobhist[0].srcmd5, srcmd5_1_1);
+    assert_eq!(jobhist.jobhist[0].versrel, versrel_1_1);
+    assert_eq!(jobhist.jobhist[0].bcnt, "1");
+    assert_eq!(jobhist.jobhist[0].readytime, readytime_1_1);
+    assert_eq!(jobhist.jobhist[0].starttime, starttime_1_1);
+    assert_eq!(jobhist.jobhist[0].endtime, endtime_1_1);
+    assert_eq!(jobhist.jobhist[0].code, PackageCode::Failed);
+    assert_eq!(jobhist.jobhist[0].uri, uri_1_1);
+    assert_eq!(jobhist.jobhist[0].workerid, worker_1_1);
+    assert_eq!(jobhist.jobhist[0].hostarch, TEST_ARCH_1);
+    assert_eq!(jobhist.jobhist[0].reason, reason_1_1);
+    assert_eq!(jobhist.jobhist[0].verifymd5, verifymd5_1_1);
+
+    assert_eq!(jobhist.jobhist[1].package, TEST_PACKAGE_2);
+    assert_eq!(jobhist.jobhist[1].rev, rev_2_1);
+    assert_eq!(jobhist.jobhist[1].srcmd5, srcmd5_2_1);
+    assert_eq!(jobhist.jobhist[1].versrel, versrel_2_1);
+    assert_eq!(jobhist.jobhist[1].bcnt, "21");
+    assert_eq!(jobhist.jobhist[1].readytime, readytime_2_1);
+    assert_eq!(jobhist.jobhist[1].starttime, starttime_2_1);
+    assert_eq!(jobhist.jobhist[1].endtime, endtime_2_1);
+    assert_eq!(jobhist.jobhist[1].code, PackageCode::Succeeded);
+    assert_eq!(jobhist.jobhist[1].uri, uri_2_1);
+    assert_eq!(jobhist.jobhist[1].workerid, worker_2_1);
+    assert_eq!(jobhist.jobhist[1].hostarch, TEST_ARCH_2);
+    assert_eq!(jobhist.jobhist[1].reason, reason_2_1);
+    assert_eq!(jobhist.jobhist[1].verifymd5, verifymd5_2_1);
+
+    assert_eq!(jobhist.jobhist[2].package, TEST_PACKAGE_2);
+    assert_eq!(jobhist.jobhist[2].rev, rev_2_2);
+    assert_eq!(jobhist.jobhist[2].srcmd5, srcmd5_2_2);
+    assert_eq!(jobhist.jobhist[2].versrel, versrel_2_2);
+    assert_eq!(jobhist.jobhist[2].bcnt, "22");
+    assert_eq!(jobhist.jobhist[2].readytime, readytime_2_2);
+    assert_eq!(jobhist.jobhist[2].starttime, starttime_2_2);
+    assert_eq!(jobhist.jobhist[2].endtime, endtime_2_2);
+    assert_eq!(jobhist.jobhist[2].code, PackageCode::Failed);
+    assert_eq!(jobhist.jobhist[2].uri, uri_2_2);
+    assert_eq!(jobhist.jobhist[2].workerid, worker_2_2);
+    assert_eq!(jobhist.jobhist[2].hostarch, TEST_ARCH_1);
+    assert_eq!(jobhist.jobhist[2].reason, reason_2_2);
+    assert_eq!(jobhist.jobhist[2].verifymd5, verifymd5_2_2);
+
+    let jobhist = project
+        .jobhistory(
+            TEST_REPO,
+            TEST_ARCH_1,
+            &JobHistoryFilters::only_package(TEST_PACKAGE_2.to_owned()),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(jobhist.jobhist.len(), 2);
+
+    assert_eq!(jobhist.jobhist[0].package, TEST_PACKAGE_2);
+    assert_eq!(jobhist.jobhist[0].rev, rev_2_1);
+    assert_eq!(jobhist.jobhist[1].package, TEST_PACKAGE_2);
+    assert_eq!(jobhist.jobhist[1].rev, rev_2_2);
+
+    let jobhist = project
+        .jobhistory(
+            TEST_REPO,
+            TEST_ARCH_1,
+            &JobHistoryFilters::empty()
+                .package(TEST_PACKAGE_2.to_owned())
+                .limit(Some(1)),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(jobhist.jobhist.len(), 1);
+
+    assert_eq!(jobhist.jobhist[0].package, TEST_PACKAGE_2);
+    assert_eq!(jobhist.jobhist[0].rev, rev_2_1);
+
+    let mut jobhist = project
+        .jobhistory(
+            TEST_REPO,
+            TEST_ARCH_1,
+            &JobHistoryFilters::empty().code(PackageCode::Failed),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(jobhist.jobhist.len(), 2);
+    jobhist.jobhist.sort_by(|a, b| a.package.cmp(&b.package));
+
+    assert_eq!(jobhist.jobhist[0].package, TEST_PACKAGE_1);
+    assert_eq!(jobhist.jobhist[0].rev, rev_1_1);
+    assert_eq!(jobhist.jobhist[1].package, TEST_PACKAGE_2);
+    assert_eq!(jobhist.jobhist[1].rev, rev_2_2);
+
+    let jobhist = project
+        .jobhistory(
+            TEST_REPO,
+            TEST_ARCH_1,
+            &JobHistoryFilters::empty()
+                .package(TEST_PACKAGE_1.to_owned())
+                .code(PackageCode::Failed),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(jobhist.jobhist.len(), 1);
+
+    assert_eq!(jobhist.jobhist[0].package, TEST_PACKAGE_1);
+    assert_eq!(jobhist.jobhist[0].rev, rev_1_1);
+
+    let jobhist = project
+        .jobhistory(
+            TEST_REPO,
+            TEST_ARCH_1,
+            &JobHistoryFilters::only_package(TEST_PACKAGE_1.to_owned())
+                .code(PackageCode::Succeeded),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(jobhist.jobhist.len(), 0);
+
+    let jobhist = project
+        .jobhistory(TEST_REPO, TEST_ARCH_2, &JobHistoryFilters::empty())
+        .await
+        .unwrap();
+
+    assert_eq!(jobhist.jobhist.len(), 1);
+
+    assert_eq!(jobhist.jobhist[0].package, TEST_PACKAGE_1);
+    assert_eq!(jobhist.jobhist[0].rev, rev_1_2);
+    assert_eq!(jobhist.jobhist[0].srcmd5, srcmd5_1_2);
+    assert_eq!(jobhist.jobhist[0].versrel, versrel_1_2);
+    assert_eq!(jobhist.jobhist[0].bcnt, "12");
+    assert_eq!(jobhist.jobhist[0].readytime, readytime_1_2);
+    assert_eq!(jobhist.jobhist[0].starttime, starttime_1_2);
+    assert_eq!(jobhist.jobhist[0].endtime, endtime_1_2);
+    assert_eq!(jobhist.jobhist[0].code, PackageCode::Succeeded);
+    assert_eq!(jobhist.jobhist[0].uri, uri_1_2);
+    assert_eq!(jobhist.jobhist[0].workerid, worker_1_2);
+    assert_eq!(jobhist.jobhist[0].hostarch, TEST_ARCH_2);
+    assert_eq!(jobhist.jobhist[0].reason, reason_1_2);
+    assert_eq!(jobhist.jobhist[0].verifymd5, verifymd5_1_2);
+}
+
+#[tokio::test]
 async fn test_build_results() {
     let mock = start_mock().await;
 

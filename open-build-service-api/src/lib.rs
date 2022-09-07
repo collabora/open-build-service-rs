@@ -458,6 +458,74 @@ impl RebuildFilters {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct JobHistoryFilters {
+    packages: Vec<String>,
+    codes: Vec<PackageCode>,
+    limit: Option<usize>,
+}
+
+impl JobHistoryFilters {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn only_package(package: String) -> Self {
+        JobHistoryFilters::empty().package(package)
+    }
+
+    pub fn add_package(&mut self, package: String) {
+        self.packages.push(package);
+    }
+
+    pub fn add_code(&mut self, code: PackageCode) {
+        self.codes.push(code);
+    }
+
+    pub fn set_limit(&mut self, limit: Option<usize>) {
+        self.limit = limit;
+    }
+
+    pub fn package(mut self, package: String) -> Self {
+        self.add_package(package);
+        self
+    }
+
+    pub fn code(mut self, code: PackageCode) -> Self {
+        self.add_code(code);
+        self
+    }
+
+    pub fn limit(mut self, limit: Option<usize>) -> Self {
+        self.set_limit(limit);
+        self
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct JobHist {
+    pub package: String,
+    pub rev: String,
+    pub srcmd5: String,
+    pub versrel: String,
+    pub bcnt: String,
+    pub readytime: u64,
+    pub starttime: u64,
+    pub endtime: u64,
+    pub code: PackageCode,
+    pub uri: String,
+    pub workerid: String,
+    pub hostarch: String,
+    pub reason: String,
+    pub verifymd5: String,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct JobHistList {
+    #[serde(default)]
+    pub jobhist: Vec<JobHist>,
+}
+
 #[derive(Deserialize, Debug)]
 struct LogEntryEntry {
     size: usize,
@@ -1074,6 +1142,36 @@ impl<'a> ProjectBuilder<'a> {
         Client::send_with_error(self.client.authenticated_request(Method::POST, u)).await?;
 
         Ok(())
+    }
+
+    pub async fn jobhistory(
+        &self,
+        repository: &str,
+        arch: &str,
+        filters: &JobHistoryFilters,
+    ) -> Result<JobHistList> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("build")
+            .push(&self.project)
+            .push(repository)
+            .push(arch)
+            .push("_jobhistory");
+
+        for package in &filters.packages {
+            u.query_pairs_mut().append_pair("package", package);
+        }
+
+        for code in &filters.codes {
+            u.query_pairs_mut().append_pair("code", &code.to_string());
+        }
+
+        if let Some(limit) = &filters.limit {
+            u.query_pairs_mut().append_pair("limit", &limit.to_string());
+        }
+
+        self.client.request(u).await
     }
 }
 
