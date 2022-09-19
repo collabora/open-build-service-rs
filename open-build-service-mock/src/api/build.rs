@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::time::SystemTime;
 
 use wiremock::ResponseTemplate;
 use wiremock::{Request, Respond};
@@ -354,15 +353,7 @@ impl Respond for BuildBinaryListResponder {
                 let mut binary_xml = XMLElement::new("binary");
                 binary_xml.add_attribute("filename", name);
                 binary_xml.add_attribute("size", &binary.contents.len().to_string());
-                binary_xml.add_attribute(
-                    "mtime",
-                    &binary
-                        .mtime
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs()
-                        .to_string(),
-                );
+                binary_xml.add_attribute("mtime", &seconds_since_epoch(&binary.mtime).to_string());
 
                 xml.add_child(binary_xml).unwrap();
             }
@@ -604,14 +595,7 @@ impl Respond for BuildLogResponder {
                 let mut entry_xml = XMLElement::new("entry");
                 entry_xml.add_attribute("name", "_log");
                 entry_xml.add_attribute("size", &log.contents.len().to_string());
-                entry_xml.add_attribute(
-                    "mtime",
-                    &log.mtime
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs()
-                        .to_string(),
-                );
+                entry_xml.add_attribute("mtime", &seconds_since_epoch(&log.mtime).to_string());
 
                 xml.add_child(entry_xml).unwrap();
             }
@@ -694,15 +678,7 @@ impl Respond for BuildHistoryResponder {
                 entry_xml.add_attribute("srcmd5", &entry.srcmd5);
                 entry_xml.add_attribute("versrel", &entry.versrel);
                 entry_xml.add_attribute("bcnt", &entry.bcnt.to_string());
-                entry_xml.add_attribute(
-                    "time",
-                    &entry
-                        .time
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs()
-                        .to_string(),
-                );
+                entry_xml.add_attribute("time", &seconds_since_epoch(&entry.time).to_string());
                 entry_xml.add_attribute("duration", &entry.duration.as_secs().to_string());
 
                 xml.add_child(entry_xml).unwrap();

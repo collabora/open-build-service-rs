@@ -1,4 +1,4 @@
-use std::{borrow::Cow, fmt::Display};
+use std::{borrow::Cow, fmt::Display, time::SystemTime};
 
 use http_types::{auth::BasicAuth, StatusCode};
 use wiremock::{Request, ResponseTemplate};
@@ -108,6 +108,12 @@ fn find_query_param<'r>(request: &'r Request, name: &str) -> Option<Cow<'r, str>
         .url
         .query_pairs()
         .find_map(|(key, value)| if key == name { Some(value) } else { None })
+}
+
+fn seconds_since_epoch(time: &SystemTime) -> u64 {
+    time.duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 // Some anyhow-inspired helper macros to make error checking easier.
