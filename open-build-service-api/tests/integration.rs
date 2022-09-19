@@ -1001,7 +1001,7 @@ async fn test_build_rebuild() {
         MockBuildStatus::new(MockPackageCode::Blocked),
     );
 
-    project.rebuild(&RebuildFilters::all()).await.unwrap();
+    project.rebuild(&RebuildFilters::empty()).await.unwrap();
 
     let status = package_1.status(TEST_REPO, TEST_ARCH_1).await.unwrap();
     assert_eq!(status.code, PackageCode::Building);

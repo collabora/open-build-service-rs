@@ -438,14 +438,14 @@ pub struct RebuildFilters {
 }
 
 impl RebuildFilters {
-    pub fn all() -> Self {
+    pub fn empty() -> Self {
         RebuildFilters {
             packages: Vec::new(),
         }
     }
 
     pub fn only_package(package: String) -> Self {
-        RebuildFilters::all().package(package)
+        RebuildFilters::empty().package(package)
     }
 
     pub fn add_package(&mut self, package: String) {
