@@ -1,6 +1,6 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
-use std::time::SystemTime;
+use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 
 use wiremock::ResponseTemplate;
 use wiremock::{Request, Respond};
@@ -309,6 +309,114 @@ impl Respond for BuildResultsResponder {
     }
 }
 
+pub(crate) struct BuildJobHistoryResponder {
+    mock: ObsMock,
+}
+
+impl BuildJobHistoryResponder {
+    pub fn new(mock: ObsMock) -> Self {
+        Self { mock }
+    }
+}
+
+impl Respond for BuildJobHistoryResponder {
+    fn respond(&self, request: &Request) -> ResponseTemplate {
+        try_api!(check_auth(self.mock.auth(), request));
+
+        let mut package_names = vec![];
+        let mut code_names = vec![];
+        let mut limit = None;
+
+        for (key, value) in request.url.query_pairs() {
+            match key.as_ref() {
+                "package" => package_names.push(value.into_owned()),
+                "code" => code_names.push(value.into_owned()),
+                "limit" if limit.is_some() => {
+                    return ApiError::new(
+                        StatusCode::Ok,
+                        "400".to_owned(),
+                        "parameter 'limit' set multiple times".to_owned(),
+                    )
+                    .into_response()
+                }
+                "limit" => limit = Some(try_api!(parse_number_param(value))),
+                _ => return unknown_parameter(&key).into_response(),
+            }
+        }
+
+        let mut components = request.url.path_segments().unwrap();
+        let arch = components.nth_back(1).unwrap();
+        let repo_name = components.nth_back(0).unwrap();
+        let project_name = components.nth_back(0).unwrap();
+
+        let projects = self.mock.projects().read().unwrap();
+
+        let project = try_api!(projects
+            .get(project_name)
+            .ok_or_else(|| unknown_project(project_name.to_owned())));
+
+        let arches = try_api!(project
+            .repos
+            .get(repo_name)
+            .ok_or_else(|| unknown_repo(project_name, repo_name)));
+        let arch =
+            try_api!(arches
+                .get(arch)
+                .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
+
+        let mut codes = HashSet::new();
+        for code_name in code_names {
+            if let Ok(code) = MockPackageCode::from_str(&code_name) {
+                codes.insert(code);
+            }
+        }
+
+        let mut xml = XMLElement::new("jobhistlist");
+        let mut entries_added = 0;
+
+        for entry in &arch.jobhist {
+            if (!package_names.is_empty() && !package_names.contains(&entry.package))
+                || (!codes.is_empty() && !codes.contains(&entry.code))
+            {
+                continue;
+            }
+
+            let mut jobhist_xml = XMLElement::new("jobhist");
+            jobhist_xml.add_attribute("package", &entry.package);
+            jobhist_xml.add_attribute("rev", &entry.rev);
+            jobhist_xml.add_attribute("srcmd5", &entry.srcmd5);
+            jobhist_xml.add_attribute("versrel", &entry.versrel);
+            jobhist_xml.add_attribute("bcnt", &entry.bcnt.to_string());
+            jobhist_xml.add_attribute(
+                "readytime",
+                &seconds_since_epoch(&entry.readytime).to_string(),
+            );
+            jobhist_xml.add_attribute(
+                "starttime",
+                &seconds_since_epoch(&entry.starttime).to_string(),
+            );
+            jobhist_xml.add_attribute("endtime", &seconds_since_epoch(&entry.endtime).to_string());
+            jobhist_xml.add_attribute("code", &entry.code.to_string());
+            jobhist_xml.add_attribute("uri", &entry.uri);
+            jobhist_xml.add_attribute("workerid", &entry.workerid);
+            jobhist_xml.add_attribute("hostarch", &entry.hostarch);
+            jobhist_xml.add_attribute("reason", &entry.reason);
+            jobhist_xml.add_attribute("verifymd5", &entry.verifymd5);
+
+            xml.add_child(jobhist_xml).unwrap();
+            entries_added += 1;
+
+            if let Some(limit) = limit {
+                if limit > 0 && entries_added >= limit {
+                    break;
+                }
+            }
+        }
+
+        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+    }
+}
+
 pub(crate) struct BuildBinaryListResponder {
     mock: ObsMock,
 }
@@ -354,15 +462,7 @@ impl Respond for BuildBinaryListResponder {
                 let mut binary_xml = XMLElement::new("binary");
                 binary_xml.add_attribute("filename", name);
                 binary_xml.add_attribute("size", &binary.contents.len().to_string());
-                binary_xml.add_attribute(
-                    "mtime",
-                    &binary
-                        .mtime
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs()
-                        .to_string(),
-                );
+                binary_xml.add_attribute("mtime", &seconds_since_epoch(&binary.mtime).to_string());
 
                 xml.add_child(binary_xml).unwrap();
             }
@@ -604,14 +704,7 @@ impl Respond for BuildLogResponder {
                 let mut entry_xml = XMLElement::new("entry");
                 entry_xml.add_attribute("name", "_log");
                 entry_xml.add_attribute("size", &log.contents.len().to_string());
-                entry_xml.add_attribute(
-                    "mtime",
-                    &log.mtime
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs()
-                        .to_string(),
-                );
+                entry_xml.add_attribute("mtime", &seconds_since_epoch(&log.mtime).to_string());
 
                 xml.add_child(entry_xml).unwrap();
             }
@@ -694,15 +787,7 @@ impl Respond for BuildHistoryResponder {
                 entry_xml.add_attribute("srcmd5", &entry.srcmd5);
                 entry_xml.add_attribute("versrel", &entry.versrel);
                 entry_xml.add_attribute("bcnt", &entry.bcnt.to_string());
-                entry_xml.add_attribute(
-                    "time",
-                    &entry
-                        .time
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs()
-                        .to_string(),
-                );
+                entry_xml.add_attribute("time", &seconds_since_epoch(&entry.time).to_string());
                 entry_xml.add_attribute("duration", &entry.duration.as_secs().to_string());
 
                 xml.add_child(entry_xml).unwrap();

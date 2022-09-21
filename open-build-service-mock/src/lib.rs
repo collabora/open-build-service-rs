@@ -7,11 +7,11 @@ use std::{
 
 use api::{
     ArchListingResponder, BuildBinaryFileResponder, BuildBinaryListResponder,
-    BuildHistoryResponder, BuildLogResponder, BuildPackageStatusResponder, BuildResultsResponder,
-    PackageSourceCommandResponder, PackageSourceDeleteResponder, PackageSourceFileResponder,
-    PackageSourceHistoryResponder, PackageSourceListingResponder, PackageSourcePlacementResponder,
-    ProjectBuildCommandResponder, ProjectDeleteResponder, ProjectListingResponder,
-    ProjectMetaResponder, RepoListingResponder,
+    BuildHistoryResponder, BuildJobHistoryResponder, BuildLogResponder,
+    BuildPackageStatusResponder, BuildResultsResponder, PackageSourceCommandResponder,
+    PackageSourceDeleteResponder, PackageSourceFileResponder, PackageSourceHistoryResponder,
+    PackageSourceListingResponder, PackageSourcePlacementResponder, ProjectBuildCommandResponder,
+    ProjectDeleteResponder, ProjectListingResponder, ProjectMetaResponder, RepoListingResponder,
 };
 
 use http_types::auth::BasicAuth;
@@ -195,7 +195,7 @@ pub enum MockRepositoryCode {
     Unpublished,
 }
 
-#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
 #[strum(serialize_all = "snake_case")]
 pub enum MockPackageCode {
     Unresolvable,
@@ -467,6 +467,45 @@ impl Default for MockBuildHistoryEntry {
     }
 }
 
+#[derive(Clone)]
+pub struct MockJobHistoryEntry {
+    pub package: String,
+    pub rev: String,
+    pub srcmd5: String,
+    pub versrel: String,
+    pub bcnt: u32,
+    pub readytime: SystemTime,
+    pub starttime: SystemTime,
+    pub endtime: SystemTime,
+    pub code: MockPackageCode,
+    pub uri: String,
+    pub workerid: String,
+    pub hostarch: String,
+    pub reason: String,
+    pub verifymd5: String,
+}
+
+impl Default for MockJobHistoryEntry {
+    fn default() -> Self {
+        Self {
+            package: "test".to_owned(),
+            rev: "1".to_owned(),
+            srcmd5: random_md5(),
+            versrel: "1.0-1".to_owned(),
+            bcnt: 1,
+            readytime: SystemTime::now(),
+            starttime: SystemTime::now(),
+            endtime: SystemTime::now(),
+            code: MockPackageCode::Succeeded,
+            uri: "http://127.0.0.1:9000".to_owned(),
+            workerid: "worker:1".to_owned(),
+            hostarch: "x86_64".to_owned(),
+            reason: "source change".to_owned(),
+            verifymd5: random_md5(),
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 struct MockRepositoryPackage {
     status: MockBuildStatus,
@@ -483,6 +522,7 @@ struct MockRepositoryPackage {
 struct MockRepository {
     code: MockRepositoryCode,
     packages: HashMap<String, MockRepositoryPackage>,
+    jobhist: Vec<MockJobHistoryEntry>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Display, EnumString)]
@@ -530,6 +570,27 @@ fn get_project<'p, 'n>(projects: &'p mut ProjectMap, name: &'n str) -> &'p mut M
     projects
         .get_mut(name)
         .unwrap_or_else(|| panic!("Unknown project: {}", name))
+}
+
+fn ensure_source_package_exists(project: &mut MockProject, package_name: &str) {
+    assert!(
+        project.packages.contains_key(package_name),
+        "Unknown package: {}",
+        package_name
+    );
+}
+
+fn get_repo<'p, 'n>(
+    project: &'p mut MockProject,
+    repo_name: &'n str,
+    arch: &'n str,
+) -> &'p mut MockRepository {
+    project
+        .repos
+        .get_mut(repo_name)
+        .unwrap_or_else(|| panic!("Unknown repo: {}", repo_name))
+        .get_mut(arch)
+        .unwrap_or_else(|| panic!("Unknown arch: {}/{}", repo_name, arch))
 }
 
 fn get_package<'p, 'n>(project: &'p mut MockProject, name: &'n str) -> &'p mut MockPackage {
@@ -629,6 +690,12 @@ impl ObsMock {
             .await;
 
         Mock::given(method("GET"))
+            .and(path_regex("^/build/[^/]+/_result$"))
+            .respond_with(BuildResultsResponder::new(server.clone()))
+            .mount(&server.inner.server)
+            .await;
+
+        Mock::given(method("GET"))
             .and(path_regex("^/build/[^/]+$"))
             .respond_with(RepoListingResponder::new(server.clone()))
             .mount(&server.inner.server)
@@ -637,6 +704,12 @@ impl ObsMock {
         Mock::given(method("GET"))
             .and(path_regex("/build/[^/]+/[^/]+$"))
             .respond_with(ArchListingResponder::new(server.clone()))
+            .mount(&server.inner.server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path_regex("^/build/[^/]+/[^/]+/[^/]+/_jobhistory$"))
+            .respond_with(BuildJobHistoryResponder::new(server.clone()))
             .mount(&server.inner.server)
             .await;
 
@@ -822,7 +895,23 @@ impl ObsMock {
             .or_insert_with(|| MockRepository {
                 code,
                 packages: HashMap::new(),
+                jobhist: Vec::new(),
             });
+    }
+
+    pub fn add_job_history(
+        &self,
+        project_name: &str,
+        repo_name: &str,
+        arch: &str,
+        entry: MockJobHistoryEntry,
+    ) {
+        let mut projects = self.inner.projects.write().unwrap();
+        let project = get_project(&mut *projects, project_name);
+        ensure_source_package_exists(project, &entry.package);
+
+        let repo = get_repo(project, repo_name, arch);
+        repo.jobhist.push(entry);
     }
 
     fn with_repo_package<R, F: FnOnce(&mut MockRepositoryPackage) -> R>(
@@ -835,20 +924,9 @@ impl ObsMock {
     ) -> R {
         let mut projects = self.inner.projects.write().unwrap();
         let project = get_project(&mut *projects, project_name);
+        ensure_source_package_exists(project, &package_name);
 
-        // Make sure the source package exists.
-        assert!(
-            project.packages.contains_key(&package_name),
-            "Unknown package: {}",
-            package_name
-        );
-
-        let package = project
-            .repos
-            .get_mut(repo_name)
-            .unwrap_or_else(|| panic!("Unknown repo: {}/{}", project_name, repo_name))
-            .get_mut(arch)
-            .unwrap_or_else(|| panic!("Unknown arch: {}/{}/{}", project_name, repo_name, arch))
+        let package = get_repo(project, repo_name, arch)
             .packages
             .entry(package_name)
             .or_default();

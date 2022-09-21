@@ -70,15 +70,7 @@ fn source_listing_xml(
         entry_xml.add_attribute("name", path);
         entry_xml.add_attribute("md5", &entry.md5);
         entry_xml.add_attribute("size", &contents.len().to_string());
-        entry_xml.add_attribute(
-            "mtime",
-            &entry
-                .mtime
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs()
-                .to_string(),
-        );
+        entry_xml.add_attribute("mtime", &seconds_since_epoch(&entry.mtime).to_string());
 
         xml.add_child(entry_xml).unwrap();
     }
@@ -259,15 +251,7 @@ impl Respond for PackageSourceHistoryResponder {
 
             let mut time_xml = XMLElement::new("time");
             time_xml
-                .add_text(
-                    revision
-                        .options
-                        .time
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_secs()
-                        .to_string(),
-                )
+                .add_text(seconds_since_epoch(&revision.options.time).to_string())
                 .unwrap();
             revision_xml.add_child(time_xml).unwrap();
 
