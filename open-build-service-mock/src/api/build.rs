@@ -29,14 +29,6 @@ fn unknown_arch(project: &str, repo: &str, arch: &str) -> ApiError {
     )
 }
 
-fn unknown_package(package: &str) -> ApiError {
-    ApiError::new(
-        StatusCode::NotFound,
-        "404".to_owned(),
-        format!("unknown package '{}'", package),
-    )
-}
-
 fn unknown_parameter(param: &str) -> ApiError {
     ApiError::new(
         StatusCode::BadRequest,
@@ -109,7 +101,7 @@ impl Respond for ProjectBuildCommandResponder {
                         // OBS is...strange here, the standard missing package
                         // error is wrapped *as a string* inside of a different
                         // error. Mimic the behavior here.
-                        let inner_xml = unknown_package(package_name).into_xml();
+                        let inner_xml = unknown_package(package_name.to_owned()).into_xml();
                         let mut inner = Vec::new();
                         inner_xml.render(&mut inner, false, true).unwrap();
 
@@ -266,7 +258,7 @@ impl Respond for BuildResultsResponder {
         for package_name in &package_filters {
             ensure!(
                 project.packages.contains_key(package_name.as_ref()),
-                unknown_package(package_name)
+                unknown_package(package_name.clone().into_owned())
             );
         }
 
@@ -444,7 +436,7 @@ impl Respond for BuildBinaryListResponder {
             .ok_or_else(|| unknown_project(project_name.to_owned())));
         ensure!(
             project.packages.contains_key(package_name),
-            unknown_package(package_name)
+            unknown_package(package_name.to_owned())
         );
 
         let arches = try_api!(project
@@ -500,7 +492,7 @@ impl Respond for BuildBinaryFileResponder {
             .ok_or_else(|| unknown_project(project_name.to_owned())));
         ensure!(
             project.packages.contains_key(package_name),
-            unknown_package(package_name)
+            unknown_package(package_name.to_owned())
         );
 
         let arches = try_api!(project
@@ -552,7 +544,7 @@ impl Respond for BuildPackageStatusResponder {
             .ok_or_else(|| unknown_project(project_name.to_owned())));
         ensure!(
             project.packages.contains_key(package_name),
-            unknown_package(package_name)
+            unknown_package(package_name.to_owned())
         );
 
         let arches = try_api!(project
@@ -673,7 +665,7 @@ impl Respond for BuildLogResponder {
             .ok_or_else(|| unknown_project(project_name.to_owned())));
         ensure!(
             project.packages.contains_key(package_name),
-            unknown_package(package_name)
+            unknown_package(package_name.to_owned())
         );
 
         let arches = try_api!(project
@@ -766,7 +758,7 @@ impl Respond for BuildHistoryResponder {
             .ok_or_else(|| unknown_project(project_name.to_owned())));
         ensure!(
             project.packages.contains_key(package_name),
-            unknown_package(package_name)
+            unknown_package(package_name.to_owned())
         );
 
         let arches = try_api!(project

@@ -16,10 +16,6 @@ use crate::{
 
 use super::*;
 
-fn unknown_package(package: String) -> ApiError {
-    ApiError::new(StatusCode::NotFound, "unknown_package".to_owned(), package)
-}
-
 fn source_file_not_found(name: &str) -> ApiError {
     ApiError::new(
         StatusCode::NotFound,
