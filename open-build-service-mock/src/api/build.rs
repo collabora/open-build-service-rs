@@ -569,7 +569,7 @@ impl Respond for BuildPackageStatusResponder {
             || {
                 package_status_xml(
                     package_name,
-                    &MockBuildStatus::new(MockPackageCode::Disabled),
+                    &MockBuildStatus::new(MockPackageCode::Unknown),
                 )
             },
             |package| package_status_xml(package_name, &package.status),
