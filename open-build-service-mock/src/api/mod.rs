@@ -75,6 +75,10 @@ fn unknown_project(project: String) -> ApiError {
     }
 }
 
+fn unknown_package(package: String) -> ApiError {
+    ApiError::new(StatusCode::NotFound, "unknown_package".to_owned(), package)
+}
+
 fn check_auth(auth: &BasicAuth, request: &Request) -> Result<(), ApiError> {
     let given_auth = request
         .headers
