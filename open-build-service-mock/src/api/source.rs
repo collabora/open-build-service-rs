@@ -168,8 +168,12 @@ impl Respond for ProjectMetaResponder {
         for (repo, arches) in &project.repos {
             let mut repository_xml = XMLElement::new("repository");
             repository_xml.add_attribute("name", repo);
-            repository_xml.add_attribute("rebuild", &project.rebuild.to_string());
-            repository_xml.add_attribute("block", &project.block.to_string());
+            if project.rebuild != Default::default() {
+                repository_xml.add_attribute("rebuild", &project.rebuild.to_string());
+            }
+            if project.block != Default::default() {
+                repository_xml.add_attribute("block", &project.block.to_string());
+            }
 
             let mut path_xml = XMLElement::new("path");
             path_xml.add_attribute("project", project_name);
