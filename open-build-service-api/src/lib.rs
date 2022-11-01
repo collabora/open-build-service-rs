@@ -49,19 +49,21 @@ impl std::fmt::Display for ApiError {
 
 type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Clone, Copy, Deserialize, Debug, Eq, PartialEq, Display)]
+#[derive(Clone, Copy, Default, Deserialize, Debug, Eq, PartialEq, Display)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum RebuildMode {
+    #[default]
     Transitive,
     Direct,
     Local,
 }
 
-#[derive(Clone, Copy, Deserialize, Debug, Eq, PartialEq, Display)]
+#[derive(Clone, Copy, Deserialize, Default, Debug, Eq, PartialEq, Display)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum BlockMode {
+    #[default]
     All,
     Local,
     Never,
@@ -70,7 +72,9 @@ pub enum BlockMode {
 #[derive(Deserialize, Debug)]
 pub struct RepositoryMeta {
     pub name: String,
+    #[serde(default)]
     pub rebuild: RebuildMode,
+    #[serde(default)]
     pub block: BlockMode,
 
     #[serde(default, rename = "arch")]
