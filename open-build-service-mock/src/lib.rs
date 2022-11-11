@@ -409,6 +409,7 @@ type ArchMap<Value> = HashMap<String, Value>;
 #[derive(Clone, Default)]
 pub struct MockBuildStatus {
     pub code: MockPackageCode,
+    pub details: String,
     pub dirty: bool,
 }
 

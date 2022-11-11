@@ -991,6 +991,8 @@ async fn test_build_jobhist() {
 
 #[tokio::test]
 async fn test_build_results() {
+    let details = "some details";
+
     let mock = start_mock().await;
 
     mock.add_project(TEST_PROJECT.to_owned());
@@ -1033,6 +1035,7 @@ async fn test_build_results() {
         TEST_PACKAGE_2.to_owned(),
         MockBuildStatus {
             code: MockPackageCode::Broken,
+            details: details.to_owned(),
             dirty: true,
         },
     );
@@ -1064,6 +1067,7 @@ async fn test_build_results() {
     let package2_status = &arch2_repo.statuses[0];
     assert_eq!(package2_status.package, TEST_PACKAGE_2);
     assert_eq!(package2_status.code, PackageCode::Broken);
+    assert_eq!(package2_status.details.as_ref().unwrap(), details);
     assert!(package2_status.dirty);
 
     let results = package_2.result().await.unwrap();
@@ -1189,6 +1193,8 @@ async fn test_build_binaries() {
 
 #[tokio::test]
 async fn test_build_status() {
+    let details = "details";
+
     let mock = start_mock().await;
 
     mock.add_project(TEST_PROJECT.to_owned());
@@ -1229,6 +1235,7 @@ async fn test_build_status() {
         TEST_PACKAGE_1.to_owned(),
         MockBuildStatus {
             code: MockPackageCode::Unknown,
+            details: details.to_owned(),
             dirty: true,
         },
     );
@@ -1237,6 +1244,7 @@ async fn test_build_status() {
 
     assert_eq!(status.package, TEST_PACKAGE_1);
     assert_eq!(status.code, PackageCode::Unknown);
+    assert_eq!(status.details.unwrap(), details);
     assert!(status.dirty);
 }
 
