@@ -234,6 +234,11 @@ fn package_status_xml(package_name: &str, status: &MockBuildStatus) -> XMLElemen
     if status.dirty {
         xml.add_attribute("dirty", "true");
     }
+
+    let mut details_xml = XMLElement::new("details");
+    details_xml.add_text(status.details.clone()).unwrap();
+    xml.add_child(details_xml).unwrap();
+
     xml
 }
 
