@@ -791,7 +791,7 @@ impl Respond for PackageSourceCommandResponder {
                 package_name,
                 comment,
                 &self.mock,
-                &mut *projects,
+                &mut projects,
             ),
             "branch" => do_branch(
                 request,
@@ -799,7 +799,7 @@ impl Respond for PackageSourceCommandResponder {
                 package_name,
                 comment,
                 &self.mock,
-                &mut *projects,
+                &mut projects,
             ),
             _ => ApiError::new(
                 StatusCode::NotFound,

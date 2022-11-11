@@ -771,7 +771,7 @@ impl ObsMock {
         block: MockBlockMode,
     ) {
         let mut projects = self.inner.projects.write().unwrap();
-        let project = get_project(&mut *projects, project_name);
+        let project = get_project(&mut projects, project_name);
         project.rebuild = rebuild;
         project.block = block;
     }
@@ -783,7 +783,7 @@ impl ObsMock {
         options: MockPackageOptions,
     ) {
         let mut projects = self.inner.projects.write().unwrap();
-        let project = get_project(&mut *projects, project_name);
+        let project = get_project(&mut projects, project_name);
         let package = MockPackage::new_with_metadata(project_name, &package_name, options);
         project.packages.insert(package_name, package);
     }
@@ -845,7 +845,7 @@ impl ObsMock {
         entries: HashMap<String, MockEntry>,
     ) {
         let mut projects = self.inner.projects.write().unwrap();
-        let project = get_project(&mut *projects, project_name);
+        let project = get_project(&mut projects, project_name);
         let package = get_package(project, package_name);
         package.add_revision(options, entries);
     }
@@ -860,7 +860,7 @@ impl ObsMock {
     ) {
         let mut projects = self.inner.projects.write().unwrap();
         let origin = get_package(
-            get_project(&mut *projects, &origin_project_name),
+            get_project(&mut projects, &origin_project_name),
             &origin_package_name,
         );
 
@@ -873,7 +873,7 @@ impl ObsMock {
             options,
         );
 
-        let project = get_project(&mut *projects, branched_project_name);
+        let project = get_project(&mut projects, branched_project_name);
         project.packages.insert(branched_package_name, package);
     }
 
@@ -885,7 +885,7 @@ impl ObsMock {
         code: MockRepositoryCode,
     ) {
         let mut projects = self.inner.projects.write().unwrap();
-        let project = get_project(&mut *projects, project_name);
+        let project = get_project(&mut projects, project_name);
 
         project
             .repos
@@ -908,7 +908,7 @@ impl ObsMock {
         entry: MockJobHistoryEntry,
     ) {
         let mut projects = self.inner.projects.write().unwrap();
-        let project = get_project(&mut *projects, project_name);
+        let project = get_project(&mut projects, project_name);
         ensure_source_package_exists(project, &entry.package);
 
         let repo = get_repo(project, repo_name, arch);
@@ -924,7 +924,7 @@ impl ObsMock {
         func: F,
     ) -> R {
         let mut projects = self.inner.projects.write().unwrap();
-        let project = get_project(&mut *projects, project_name);
+        let project = get_project(&mut projects, project_name);
         ensure_source_package_exists(project, &package_name);
 
         let package = get_repo(project, repo_name, arch)
@@ -953,7 +953,7 @@ impl ObsMock {
         status: MockBuildStatus,
     ) {
         let mut projects = self.inner.projects.write().unwrap();
-        let project = get_project(&mut *projects, project_name);
+        let project = get_project(&mut projects, project_name);
         project.rebuild_status = status;
     }
 
