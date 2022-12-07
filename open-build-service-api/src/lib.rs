@@ -5,7 +5,10 @@ use futures::ready;
 use futures::stream::BoxStream;
 use md5::{Digest, Md5};
 use quick_xml::{de::DeError, events::Event};
-use reqwest::{header::CONTENT_TYPE, Body, Method, RequestBuilder, Response};
+use reqwest::{
+    header::{CONTENT_LENGTH, CONTENT_TYPE},
+    Body, Method, RequestBuilder, Response,
+};
 use serde::de::IntoDeserializer;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::HashMap;
@@ -728,6 +731,7 @@ impl<'a> PackageBuilder<'a> {
         file: &str,
         rev: Option<&str>,
         data: T,
+        size: Option<u64>,
     ) -> Result<()> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
@@ -741,13 +745,16 @@ impl<'a> PackageBuilder<'a> {
             u.query_pairs_mut().append_pair("rev", rev);
         }
 
-        Client::send_with_error(
-            self.client
-                .authenticated_request(Method::PUT, u)
-                .header(CONTENT_TYPE, "application/octet-stream")
-                .body(data),
-        )
-        .await?;
+        let mut req = self
+            .client
+            .authenticated_request(Method::PUT, u)
+            .header(CONTENT_TYPE, "application/octet-stream")
+            .body(data);
+        if let Some(size) = size {
+            req = req.header(CONTENT_LENGTH, size);
+        }
+
+        Client::send_with_error(req).await?;
 
         Ok(())
     }
@@ -821,7 +828,7 @@ impl<'a> PackageBuilder<'a> {
             .push(&self.package)
             .push("_meta");
 
-        self.upload_file("_meta", None, "<package/>").await?;
+        self.upload_file("_meta", None, "<package/>", None).await?;
         Ok(())
     }
 
@@ -902,7 +909,12 @@ impl<'a> PackageBuilder<'a> {
         )
     }
 
-    pub async fn upload_for_commit<T: Into<Body>>(&self, file: &str, data: T) -> Result<()> {
+    pub async fn upload_for_commit<T: Into<Body>>(
+        &self,
+        file: &str,
+        data: T,
+        size: u64,
+    ) -> Result<()> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
             .map_err(|_| Error::InvalidUrl)?
@@ -910,7 +922,8 @@ impl<'a> PackageBuilder<'a> {
             .push(&self.project)
             .push(&self.package)
             .push(file);
-        self.upload_file(file, Some("repository"), data).await?;
+        self.upload_file(file, Some("repository"), data, Some(size))
+            .await?;
         Ok(())
     }
 
