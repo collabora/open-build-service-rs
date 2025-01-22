@@ -212,7 +212,7 @@ async fn test_source_list() {
         TEST_PROJECT,
         TEST_PACKAGE_1,
         MockRevisionOptions {
-            time: mtime.clone(),
+            time: mtime,
             srcmd5: srcmd5.clone(),
             ..Default::default()
         },
@@ -1157,7 +1157,7 @@ async fn test_build_binaries() {
             test_file.to_owned(),
             MockBinary {
                 contents: test_contents.to_vec(),
-                mtime: test_mtime.clone(),
+                mtime: test_mtime,
             },
         )]
         .into(),
