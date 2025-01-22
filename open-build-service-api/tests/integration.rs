@@ -1095,8 +1095,7 @@ async fn test_build_results() {
     let package2_arch2 = arch1_repo
         .statuses
         .iter()
-        .filter(|status| status.package == TEST_PACKAGE_2)
-        .next()
+        .find(|status| status.package == TEST_PACKAGE_2)
         .unwrap();
     assert_eq!(package2_arch2.package, TEST_PACKAGE_2);
     assert_eq!(package2_arch2.code, PackageCode::Broken);
