@@ -96,7 +96,7 @@ impl Respond for ProjectListingResponder {
         let mut components = request.url.path_segments().unwrap();
         let project_name = components.nth_back(0).unwrap();
 
-        let projects = self.mock.projects().write().unwrap();
+        let projects = self.mock.projects().read().unwrap();
         let project = try_api!(projects
             .get(project_name)
             .ok_or_else(|| unknown_project(project_name.to_owned())));
