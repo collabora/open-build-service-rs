@@ -1491,7 +1491,6 @@ async fn test_build_logs() {
         .stream(PackageLogStreamOptions {
             offset: Some(4),
             end: Some(11),
-            ..PackageLogStreamOptions::default()
         })
         .unwrap();
 
