@@ -875,7 +875,7 @@ impl ObsMock {
         project
             .repos
             .entry(repo_name)
-            .or_insert_with(HashMap::new)
+            .or_default()
             .entry(arch)
             .and_modify(|repo| repo.code = code)
             .or_insert_with(|| MockRepository {
