@@ -195,7 +195,7 @@ pub enum MockRepositoryCode {
     Unpublished,
 }
 
-#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash, Default)]
 #[strum(serialize_all = "snake_case")]
 pub enum MockPackageCode {
     Unresolvable,
@@ -207,16 +207,11 @@ pub enum MockPackageCode {
     Excluded,
     Blocked,
     Locked,
+    #[default]
     Unknown,
     Scheduled,
     Building,
     Finished,
-}
-
-impl Default for MockPackageCode {
-    fn default() -> Self {
-        MockPackageCode::Unknown
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -526,32 +521,22 @@ struct MockRepository {
     jobhist: Vec<MockJobHistoryEntry>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Display, EnumString)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Display, EnumString, Default)]
 #[strum(serialize_all = "snake_case")]
 pub enum MockRebuildMode {
+    #[default]
     Transitive,
     Direct,
     Local,
 }
 
-impl Default for MockRebuildMode {
-    fn default() -> Self {
-        MockRebuildMode::Transitive
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Display, EnumString)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Display, EnumString, Default)]
 #[strum(serialize_all = "snake_case")]
 pub enum MockBlockMode {
+    #[default]
     All,
     Local,
     Never,
-}
-
-impl Default for MockBlockMode {
-    fn default() -> Self {
-        MockBlockMode::All
-    }
 }
 
 #[derive(Default)]
