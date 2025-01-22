@@ -552,7 +552,7 @@ struct MockProject {
 
 type ProjectMap = HashMap<String, MockProject>;
 
-fn get_project<'p, 'n>(projects: &'p mut ProjectMap, name: &'n str) -> &'p mut MockProject {
+fn get_project<'p>(projects: &'p mut ProjectMap, name: &str) -> &'p mut MockProject {
     projects
         .get_mut(name)
         .unwrap_or_else(|| panic!("Unknown project: {}", name))
@@ -579,7 +579,7 @@ fn get_repo<'p, 'n>(
         .unwrap_or_else(|| panic!("Unknown arch: {}/{}", repo_name, arch))
 }
 
-fn get_package<'p, 'n>(project: &'p mut MockProject, name: &'n str) -> &'p mut MockPackage {
+fn get_package<'p>(project: &'p mut MockProject, name: &str) -> &'p mut MockPackage {
     project
         .packages
         .get_mut(name)
