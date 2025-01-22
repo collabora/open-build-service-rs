@@ -960,10 +960,10 @@ impl<'a> PackageBuilder<'a> {
         let mut reader = quick_xml::Reader::from_str(&response);
         reader.trim_text(true);
         let mut buf = Vec::new();
-        if let Event::Start(e) = reader.read_event(&mut buf).map_err(DeError::Xml)? {
+        if let Event::Start(e) = reader.read_event(&mut buf).map_err(DeError::from)? {
             let mut is_missing = false;
             for attr in e.attributes() {
-                let attr = attr.map_err(DeError::Xml)?;
+                let attr = attr.map_err(DeError::from)?;
                 if attr.key == b"error" {
                     if attr.value.as_ref() != b"missing" {
                         return Err(DeError::Custom(
