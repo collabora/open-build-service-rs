@@ -663,7 +663,7 @@ impl<'a> PackageLog<'a> {
         u.query_pairs_mut().append_pair("view", "entry");
 
         let e: LogEntry = self.client.request(u).await?;
-        if let Some(entry) = e.entries.get(0) {
+        if let Some(entry) = e.entries.first() {
             Ok((entry.size, entry.mtime))
         } else {
             Err(Error::UnexpectedResult)

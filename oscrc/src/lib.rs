@@ -60,7 +60,7 @@ impl Oscrc {
         let service = service.domain().ok_or(CredentialsError::UnknownUrl)?;
 
         let items = ss.search_items(vec![("username", user), ("service", service)])?;
-        let item = items.get(0).ok_or(CredentialsError::MissingSecretsPass)?;
+        let item = items.first().ok_or(CredentialsError::MissingSecretsPass)?;
         let secret = item.get_secret()?;
         let pass = String::from_utf8(secret)?;
 
