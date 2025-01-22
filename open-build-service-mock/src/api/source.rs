@@ -559,7 +559,7 @@ fn do_commit(
 
     for req_entry in filelist.entries {
         let key = MockSourceFileKey::borrowed(&req_entry.name, &req_entry.md5);
-        if package.files.get(&key).is_some() {
+        if package.files.contains_key(&key) {
             entries.insert(
                 key.path.into_owned(),
                 MockEntry {
