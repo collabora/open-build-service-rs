@@ -14,7 +14,6 @@ use api::{
     ProjectDeleteResponder, ProjectListingResponder, ProjectMetaResponder, RepoListingResponder,
 };
 
-use http_types::auth::BasicAuth;
 use md5::{Digest, Md5};
 use strum_macros::{Display, EnumString};
 use wiremock::{
@@ -25,6 +24,8 @@ use wiremock::{
 use xml_builder::XMLElement;
 
 mod api;
+
+use crate::api::BasicAuth;
 
 pub const ADMIN_USER: &str = "Admin";
 

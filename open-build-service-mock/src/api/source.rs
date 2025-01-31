@@ -3,7 +3,7 @@ use std::convert::{TryFrom, TryInto};
 use std::io::BufReader;
 use std::time::SystemTime;
 
-use http_types::StatusCode;
+use http::StatusCode;
 use serde::{de::DeserializeOwned, Deserialize};
 use wiremock::ResponseTemplate;
 use wiremock::{Request, Respond};
@@ -18,7 +18,7 @@ use super::*;
 
 fn source_file_not_found(name: &str) -> ApiError {
     ApiError::new(
-        StatusCode::NotFound,
+        StatusCode::NOT_FOUND,
         "404".to_owned(),
         format!("{}: no such file", name),
     )
@@ -76,7 +76,7 @@ fn source_listing_xml(
 
 fn parse_xml_request<T: DeserializeOwned>(request: &Request) -> Result<T, ApiError> {
     quick_xml::de::from_reader(BufReader::new(&request.body[..]))
-        .map_err(|e| ApiError::new(StatusCode::BadRequest, "400".to_string(), e.to_string()))
+        .map_err(|e| ApiError::new(StatusCode::BAD_REQUEST, "400".to_string(), e.to_string()))
 }
 
 pub(crate) struct ProjectListingResponder {
@@ -111,7 +111,7 @@ impl Respond for ProjectListingResponder {
             xml.add_child(entry_xml).unwrap();
         }
 
-        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+        ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
     }
 }
 
@@ -135,7 +135,7 @@ impl Respond for ProjectDeleteResponder {
         let mut projects = self.mock.projects().write().unwrap();
 
         match projects.remove(project_name) {
-            Some(_) => ResponseTemplate::new(StatusCode::Ok)
+            Some(_) => ResponseTemplate::new(StatusCode::OK)
                 .set_body_xml(build_status_xml("ok", Some("Ok".to_owned()))),
             None => unknown_project(project_name.to_owned()).into_response(),
         }
@@ -191,7 +191,7 @@ impl Respond for ProjectMetaResponder {
             xml.add_child(repository_xml).unwrap();
         }
 
-        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+        ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
     }
 }
 
@@ -268,7 +268,7 @@ impl Respond for PackageSourceHistoryResponder {
             xml.add_child(revision_xml).unwrap();
         }
 
-        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+        ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
     }
 }
 
@@ -305,7 +305,7 @@ impl Respond for PackageSourceListingResponder {
             None | Some("0") => false,
             Some(_) => {
                 return ApiError::new(
-                    StatusCode::BadRequest,
+                    StatusCode::BAD_REQUEST,
                     "400".to_owned(),
                     "not boolean".to_owned(),
                 )
@@ -321,14 +321,14 @@ impl Respond for PackageSourceListingResponder {
 
         let rev_id = if let Some(rev_arg) = find_query_param(request, "rev") {
             let index: usize = try_api!(rev_arg.parse().map_err(|_| ApiError::new(
-                StatusCode::BadRequest,
+                StatusCode::BAD_REQUEST,
                 "400".to_owned(),
                 format!("bad revision '{}'", rev_arg)
             )));
             ensure!(
                 index <= package.revisions.len() && (index > 0 || !list_meta),
                 ApiError::new(
-                    StatusCode::BadRequest,
+                    StatusCode::BAD_REQUEST,
                     "400".to_owned(),
                     "no such revision".to_owned(),
                 )
@@ -348,12 +348,12 @@ impl Respond for PackageSourceListingResponder {
             xml.add_attribute("name", package_name);
             xml.add_attribute("srcmd5", ZERO_REV_SRCMD5);
 
-            return ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml);
+            return ResponseTemplate::new(StatusCode::OK).set_body_xml(xml);
         }
 
         // -1 to skip the zero revision (see above).
         let rev = &revisions[rev_id - 1];
-        ResponseTemplate::new(StatusCode::Ok).set_body_xml(source_listing_xml(
+        ResponseTemplate::new(StatusCode::OK).set_body_xml(source_listing_xml(
             package_name,
             package,
             rev_id,
@@ -486,7 +486,7 @@ impl Respond for PackageSourcePlacementResponder {
                     )
                 });
 
-            ResponseTemplate::new(StatusCode::Ok)
+            ResponseTemplate::new(StatusCode::OK)
                 .set_body_xml(build_status_xml("ok", Some("Ok".to_owned())))
         } else {
             let package = try_api!(project
@@ -510,10 +510,10 @@ impl Respond for PackageSourcePlacementResponder {
 
                 xml.add_child(srcmd5_xml).unwrap();
 
-                ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+                ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
             } else {
                 ApiError::new(
-                    StatusCode::MisdirectedRequest,
+                    StatusCode::MISDIRECTED_REQUEST,
                     "unsupported".to_string(),
                     "Operation not supported by the OBS mock server".to_owned(),
                 )
@@ -585,7 +585,7 @@ fn do_commit(
             xml.add_child(entry_xml).unwrap();
         }
 
-        return ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml);
+        return ResponseTemplate::new(StatusCode::OK).set_body_xml(xml);
     }
 
     let options = MockRevisionOptions {
@@ -600,7 +600,7 @@ fn do_commit(
 
     let rev_id = package.revisions.len();
     let rev = package.revisions.last().unwrap();
-    ResponseTemplate::new(StatusCode::Ok).set_body_xml(source_listing_xml(
+    ResponseTemplate::new(StatusCode::OK).set_body_xml(source_listing_xml(
         package_name,
         package,
         rev_id,
@@ -617,7 +617,7 @@ fn branch_data_xml(name: &str, value: String) -> XMLElement {
 
 fn project_meta_enum_error() -> ApiError {
     ApiError::new(
-        StatusCode::BadRequest,
+        StatusCode::BAD_REQUEST,
         "invalid_argument".to_owned(),
         "Internal Server Error".to_owned(),
     )
@@ -678,7 +678,7 @@ fn do_branch(
         // Package exists, missingok=true
         (true, true) => {
             return ApiError::new(
-                StatusCode::BadRequest,
+                StatusCode::BAD_REQUEST,
                 "not_missing".to_owned(),
                 format!(
                     "Branch call with missingok parameter but branched source ({}/{}) exists.",
@@ -725,7 +725,7 @@ fn do_branch(
                 .packages
                 .contains_key(target_package_name.as_ref()),
         ApiError::new(
-            StatusCode::BadRequest,
+            StatusCode::BAD_REQUEST,
             "double_branch_package".to_owned(),
             format!(
                 "branch target package already exists: {}/{}",
@@ -761,7 +761,7 @@ fn do_branch(
     ))
     .unwrap();
 
-    ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+    ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
 }
 
 impl Respond for PackageSourceCommandResponder {
@@ -776,7 +776,7 @@ impl Respond for PackageSourceCommandResponder {
 
         let cmd = try_api!(
             find_query_param(request, "cmd").ok_or_else(|| ApiError::new(
-                StatusCode::BadRequest,
+                StatusCode::BAD_REQUEST,
                 "missing_parameter".to_string(),
                 "POST request without given cmd parameter".to_string()
             ))
@@ -802,7 +802,7 @@ impl Respond for PackageSourceCommandResponder {
                 &mut projects,
             ),
             _ => ApiError::new(
-                StatusCode::NotFound,
+                StatusCode::NOT_FOUND,
                 "illegal_request".to_string(),
                 "invalid_command".to_string(),
             )
@@ -845,7 +845,7 @@ impl Respond for PackageSourceDeleteResponder {
             }
         }
 
-        ResponseTemplate::new(StatusCode::Ok)
+        ResponseTemplate::new(StatusCode::OK)
             .set_body_xml(build_status_xml("ok", Some("Ok".to_owned())))
     }
 }
