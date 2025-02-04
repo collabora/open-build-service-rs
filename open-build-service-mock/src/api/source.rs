@@ -4,10 +4,10 @@ use std::io::BufReader;
 use std::time::SystemTime;
 
 use http::StatusCode;
+use quick_xml::events::BytesText;
 use serde::{de::DeserializeOwned, Deserialize};
 use wiremock::ResponseTemplate;
 use wiremock::{Request, Respond};
-use xml_builder::XMLElement;
 
 use crate::{
     random_md5, MockBranchOptions, MockEntry, MockPackage, MockPackageOptions, MockProject,
@@ -25,53 +25,62 @@ fn source_file_not_found(name: &str) -> ApiError {
 }
 
 fn source_listing_xml(
+    xml: &mut XMLWriter,
     package_name: &str,
     package: &MockPackage,
     rev_id: usize,
     rev: &MockRevision,
-) -> XMLElement {
-    let mut xml = XMLElement::new("directory");
-    xml.add_attribute("name", package_name);
-    xml.add_attribute("rev", &rev_id.to_string());
-    xml.add_attribute(
-        "vrev",
-        &rev.vrev
-            .map_or_else(|| "".to_owned(), |vrev| vrev.to_string()),
-    );
-    xml.add_attribute("srcmd5", &rev.options.srcmd5);
+) -> quick_xml::Result<()> {
+    xml.create_element("directory")
+        .with_attributes([
+            ("name", package_name),
+            ("rev", &rev_id.to_string()),
+            (
+                "vrev",
+                &rev.vrev
+                    .map_or_else(|| "".to_owned(), |vrev| vrev.to_string()),
+            ),
+            ("srcmd5", &rev.options.srcmd5),
+        ])
+        .write_inner_content(|writer| {
+            for linkinfo in &rev.linkinfo {
+                let mut linkinfo_xml = writer.create_element("linkinfo").with_attributes([
+                    ("project", linkinfo.project.as_str()),
+                    ("package", &linkinfo.package),
+                    ("baserev", &linkinfo.baserev),
+                    ("srcmd5", &linkinfo.srcmd5),
+                    ("xsrcmd5", &linkinfo.xsrcmd5),
+                    ("lsrcmd5", &linkinfo.lsrcmd5),
+                ]);
 
-    for linkinfo in &rev.linkinfo {
-        let mut link_xml = XMLElement::new("linkinfo");
-        link_xml.add_attribute("project", &linkinfo.project);
-        link_xml.add_attribute("package", &linkinfo.package);
-        link_xml.add_attribute("baserev", &linkinfo.baserev);
-        link_xml.add_attribute("srcmd5", &linkinfo.srcmd5);
-        link_xml.add_attribute("xsrcmd5", &linkinfo.xsrcmd5);
-        link_xml.add_attribute("lsrcmd5", &linkinfo.lsrcmd5);
+                if linkinfo.missingok {
+                    linkinfo_xml = linkinfo_xml.with_attribute(("missingok", "1"));
+                }
 
-        if linkinfo.missingok {
-            link_xml.add_attribute("missingok", "1");
-        }
+                linkinfo_xml.write_empty()?;
+            }
 
-        xml.add_child(link_xml).unwrap();
-    }
+            for (path, entry) in &rev.entries {
+                let contents = package
+                    .files
+                    .get(&MockSourceFileKey::borrowed(path, &entry.md5))
+                    .unwrap();
 
-    for (path, entry) in &rev.entries {
-        let contents = package
-            .files
-            .get(&MockSourceFileKey::borrowed(path, &entry.md5))
-            .unwrap();
+                writer
+                    .create_element("entry")
+                    .with_attributes([
+                        ("name", path.as_str()),
+                        ("md5", &entry.md5),
+                        ("size", &contents.len().to_string()),
+                        ("mtime", &seconds_since_epoch(&entry.mtime).to_string()),
+                    ])
+                    .write_empty()?;
+            }
 
-        let mut entry_xml = XMLElement::new("entry");
-        entry_xml.add_attribute("name", path);
-        entry_xml.add_attribute("md5", &entry.md5);
-        entry_xml.add_attribute("size", &contents.len().to_string());
-        entry_xml.add_attribute("mtime", &seconds_since_epoch(&entry.mtime).to_string());
+            Ok(())
+        })?;
 
-        xml.add_child(entry_xml).unwrap();
-    }
-
-    xml
+    Ok(())
 }
 
 fn parse_xml_request<T: DeserializeOwned>(request: &Request) -> Result<T, ApiError> {
@@ -101,15 +110,19 @@ impl Respond for ProjectListingResponder {
             .get(project_name)
             .ok_or_else(|| unknown_project(project_name.to_owned())));
 
-        let mut xml = XMLElement::new("directory");
-        xml.add_attribute("count", &project.packages.len().to_string());
-
-        for package_name in project.packages.keys() {
-            let mut entry_xml = XMLElement::new("entry");
-            entry_xml.add_attribute("name", package_name);
-
-            xml.add_child(entry_xml).unwrap();
-        }
+        let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+        xml.create_element("directory")
+            .with_attribute(("count", project.packages.len().to_string().as_str()))
+            .write_inner_content(|writer| {
+                for package_name in project.packages.keys() {
+                    writer
+                        .create_element("entry")
+                        .with_attribute(("name", package_name.as_str()))
+                        .write_empty()?;
+                }
+                Ok(())
+            })
+            .unwrap();
 
         ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
     }
@@ -136,7 +149,7 @@ impl Respond for ProjectDeleteResponder {
 
         match projects.remove(project_name) {
             Some(_) => ResponseTemplate::new(StatusCode::OK)
-                .set_body_xml(build_status_xml("ok", Some("Ok".to_owned()))),
+                .set_body_xml(build_status_xml("ok", Some("Ok".to_owned()), |_| Ok(())).unwrap()),
             None => unknown_project(project_name.to_owned()).into_response(),
         }
     }
@@ -162,34 +175,40 @@ impl Respond for ProjectMetaResponder {
             .get(project_name)
             .ok_or_else(|| unknown_project(project_name.to_owned())));
 
-        let mut xml = XMLElement::new("project");
-        xml.add_attribute("name", project_name);
+        let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+        xml.create_element("project")
+            .with_attribute(("name", project_name))
+            .write_inner_content(|writer| {
+                for (repo, arches) in &project.repos {
+                    let mut repository_xml = writer
+                        .create_element("repository")
+                        .with_attribute(("name", repo.as_str()));
+                    if project.rebuild != Default::default() {
+                        repository_xml = repository_xml
+                            .with_attribute(("rebuild", project.rebuild.to_string().as_str()));
+                    }
+                    if project.block != Default::default() {
+                        repository_xml = repository_xml
+                            .with_attribute(("block", project.block.to_string().as_str()));
+                    }
 
-        for (repo, arches) in &project.repos {
-            let mut repository_xml = XMLElement::new("repository");
-            repository_xml.add_attribute("name", repo);
-            if project.rebuild != Default::default() {
-                repository_xml.add_attribute("rebuild", &project.rebuild.to_string());
-            }
-            if project.block != Default::default() {
-                repository_xml.add_attribute("block", &project.block.to_string());
-            }
+                    repository_xml.write_inner_content(|writer| {
+                        writer
+                            .create_element("path")
+                            .with_attributes([("project", project_name), ("repository", repo)])
+                            .write_empty()?;
 
-            let mut path_xml = XMLElement::new("path");
-            path_xml.add_attribute("project", project_name);
-            path_xml.add_attribute("repository", repo);
-
-            repository_xml.add_child(path_xml).unwrap();
-
-            for arch in arches.keys() {
-                let mut arch_xml = XMLElement::new("arch");
-                arch_xml.add_text(arch.clone()).unwrap();
-
-                repository_xml.add_child(arch_xml).unwrap();
-            }
-
-            xml.add_child(repository_xml).unwrap();
-        }
+                        for arch in arches.keys() {
+                            writer
+                                .create_element("arch")
+                                .write_text_content(BytesText::from_plain(arch.as_bytes()))?;
+                        }
+                        Ok(())
+                    })?;
+                }
+                Ok(())
+            })
+            .unwrap();
 
         ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
     }
@@ -221,52 +240,59 @@ impl Respond for PackageSourceHistoryResponder {
             .get(package_name)
             .ok_or_else(|| unknown_package(package_name.to_owned())));
 
-        let mut xml = XMLElement::new("revisionlist");
-        for (rev_id, revision) in package.revisions.iter().enumerate() {
-            // SAFETY: non-meta revisions should always have `vrev` set,
-            // otherwise it's a bug.
-            let vrev = revision.vrev.unwrap();
+        let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+        xml.create_element("revisionlist")
+            .write_inner_content(|writer| {
+                for (rev_id, revision) in package.revisions.iter().enumerate() {
+                    // SAFETY: non-meta revisions should always have `vrev` set,
+                    // otherwise it's a bug.
+                    let vrev = revision.vrev.unwrap();
 
-            let mut revision_xml = XMLElement::new("revision");
-            revision_xml.add_attribute("rev", &(rev_id + 1).to_string());
-            revision_xml.add_attribute("vrev", &vrev.to_string());
+                    writer
+                        .create_element("revision")
+                        .with_attributes([
+                            ("rev", (rev_id + 1).to_string().as_str()),
+                            ("vrev", vrev.to_string().as_str()),
+                        ])
+                        .write_inner_content(|writer| {
+                            writer.create_element("srcmd5").write_text_content(
+                                BytesText::from_plain(revision.options.srcmd5.as_bytes()),
+                            )?;
 
-            let mut srcmd5_xml = XMLElement::new("srcmd5");
-            srcmd5_xml
-                .add_text(revision.options.srcmd5.clone())
-                .unwrap();
-            revision_xml.add_child(srcmd5_xml).unwrap();
+                            writer.create_element("version").write_text_content(
+                                BytesText::from_plain(
+                                    revision
+                                        .options
+                                        .version
+                                        .clone()
+                                        .unwrap_or_else(|| "unknown".to_owned())
+                                        .as_bytes(),
+                                ),
+                            )?;
 
-            let mut version_xml = XMLElement::new("version");
-            version_xml
-                .add_text(
-                    revision
-                        .options
-                        .version
-                        .clone()
-                        .unwrap_or_else(|| "unknown".to_owned()),
-                )
-                .unwrap();
-            revision_xml.add_child(version_xml).unwrap();
+                            writer.create_element("time").write_text_content(
+                                BytesText::from_plain(
+                                    seconds_since_epoch(&revision.options.time)
+                                        .to_string()
+                                        .as_bytes(),
+                                ),
+                            )?;
 
-            let mut time_xml = XMLElement::new("time");
-            time_xml
-                .add_text(seconds_since_epoch(&revision.options.time).to_string())
-                .unwrap();
-            revision_xml.add_child(time_xml).unwrap();
+                            writer.create_element("user").write_text_content(
+                                BytesText::from_plain(revision.options.user.as_bytes()),
+                            )?;
 
-            let mut user_xml = XMLElement::new("user");
-            user_xml.add_text(revision.options.user.clone()).unwrap();
-            revision_xml.add_child(user_xml).unwrap();
-
-            if let Some(comment) = &revision.options.comment {
-                let mut comment_xml = XMLElement::new("comment");
-                comment_xml.add_text(comment.clone()).unwrap();
-                revision_xml.add_child(comment_xml).unwrap();
-            }
-
-            xml.add_child(revision_xml).unwrap();
-        }
+                            if let Some(comment) = &revision.options.comment {
+                                writer.create_element("comment").write_text_content(
+                                    BytesText::from_plain(comment.as_bytes()),
+                                )?;
+                            }
+                            Ok(())
+                        })?;
+                }
+                Ok(())
+            })
+            .unwrap();
 
         ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
     }
@@ -344,21 +370,20 @@ impl Respond for PackageSourceListingResponder {
 
             // OBS seems to have this weird zero revision that always has
             // the same md5 but no contents, so we just handle it in here.
-            let mut xml = XMLElement::new("directory");
-            xml.add_attribute("name", package_name);
-            xml.add_attribute("srcmd5", ZERO_REV_SRCMD5);
+            let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+            xml.create_element("directory")
+                .with_attributes([("name", package_name), ("srcmd5", ZERO_REV_SRCMD5)])
+                .write_empty()
+                .unwrap();
 
             return ResponseTemplate::new(StatusCode::OK).set_body_xml(xml);
         }
 
         // -1 to skip the zero revision (see above).
         let rev = &revisions[rev_id - 1];
-        ResponseTemplate::new(StatusCode::OK).set_body_xml(source_listing_xml(
-            package_name,
-            package,
-            rev_id,
-            rev,
-        ))
+        let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+        source_listing_xml(&mut xml, package_name, package, rev_id, rev).unwrap();
+        ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
     }
 }
 
@@ -487,7 +512,7 @@ impl Respond for PackageSourcePlacementResponder {
                 });
 
             ResponseTemplate::new(StatusCode::OK)
-                .set_body_xml(build_status_xml("ok", Some("Ok".to_owned())))
+                .set_body_xml(build_status_xml("ok", Some("Ok".to_owned()), |_| Ok(())).unwrap())
         } else {
             let package = try_api!(project
                 .packages
@@ -502,13 +527,16 @@ impl Respond for PackageSourcePlacementResponder {
                 let (key, contents) = file.into_key_and_contents();
                 package.files.insert(key, contents);
 
-                let mut xml = XMLElement::new("revision");
-                xml.add_attribute("rev", "repository");
-
-                let mut srcmd5_xml = XMLElement::new("srcmd5");
-                srcmd5_xml.add_text(random_md5()).unwrap();
-
-                xml.add_child(srcmd5_xml).unwrap();
+                let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+                xml.create_element("revision")
+                    .with_attribute(("rev", "repository"))
+                    .write_inner_content(|writer| {
+                        writer
+                            .create_element("srcmd5")
+                            .write_text_content(BytesText::from_plain(random_md5().as_bytes()))?;
+                        Ok(())
+                    })
+                    .unwrap();
 
                 ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
             } else {
@@ -573,17 +601,23 @@ fn do_commit(
     }
 
     if !missing.is_empty() {
-        let mut xml = XMLElement::new("directory");
-        xml.add_attribute("name", package_name);
-        xml.add_attribute("error", "missing");
+        let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+        xml.create_element("directory")
+            .with_attributes([("name", package_name), ("error", "missing")])
+            .write_inner_content(|writer| {
+                for req_entry in &missing {
+                    writer
+                        .create_element("entry")
+                        .with_attributes([
+                            ("name", req_entry.name.as_str()),
+                            ("md5", &req_entry.md5),
+                        ])
+                        .write_empty()?;
+                }
 
-        for req_entry in missing {
-            let mut entry_xml = XMLElement::new("entry");
-            entry_xml.add_attribute("name", &req_entry.name);
-            entry_xml.add_attribute("md5", &req_entry.md5);
-
-            xml.add_child(entry_xml).unwrap();
-        }
+                Ok(())
+            })
+            .unwrap();
 
         return ResponseTemplate::new(StatusCode::OK).set_body_xml(xml);
     }
@@ -600,19 +634,16 @@ fn do_commit(
 
     let rev_id = package.revisions.len();
     let rev = package.revisions.last().unwrap();
-    ResponseTemplate::new(StatusCode::OK).set_body_xml(source_listing_xml(
-        package_name,
-        package,
-        rev_id,
-        rev,
-    ))
+    let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+    source_listing_xml(&mut xml, package_name, package, rev_id, rev).unwrap();
+    ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
 }
 
-fn branch_data_xml(name: &str, value: String) -> XMLElement {
-    let mut xml = XMLElement::new("data");
-    xml.add_attribute("name", name);
-    xml.add_text(value).unwrap();
-    xml
+fn branch_data_xml(xml: &mut XMLWriter, name: &str, value: &str) -> quick_xml::Result<()> {
+    xml.create_element("data")
+        .with_attribute(("name", name))
+        .write_text_content(BytesText::from_plain(value.as_bytes()))?;
+    Ok(())
 }
 
 fn project_meta_enum_error() -> ApiError {
@@ -738,29 +769,14 @@ fn do_branch(
         .packages
         .insert(target_package_name.to_string(), target_package);
 
-    let mut xml = build_status_xml("ok", Some("Ok".to_owned()));
-
-    xml.add_child(branch_data_xml(
-        "targetproject",
-        target_project_name.into_owned(),
-    ))
+    let xml = build_status_xml("ok", Some("Ok".to_owned()), |writer| {
+        branch_data_xml(writer, "targetproject", &target_project_name).unwrap();
+        branch_data_xml(writer, "targetpackage", &target_package_name).unwrap();
+        branch_data_xml(writer, "sourceproject", origin_project_name).unwrap();
+        branch_data_xml(writer, "sourcepackage", origin_package_name).unwrap();
+        Ok(())
+    })
     .unwrap();
-    xml.add_child(branch_data_xml(
-        "targetpackage",
-        target_package_name.into_owned(),
-    ))
-    .unwrap();
-    xml.add_child(branch_data_xml(
-        "sourceproject",
-        origin_project_name.to_owned(),
-    ))
-    .unwrap();
-    xml.add_child(branch_data_xml(
-        "sourcepackage",
-        origin_package_name.to_owned(),
-    ))
-    .unwrap();
-
     ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
 }
 
@@ -846,6 +862,6 @@ impl Respond for PackageSourceDeleteResponder {
         }
 
         ResponseTemplate::new(StatusCode::OK)
-            .set_body_xml(build_status_xml("ok", Some("Ok".to_owned())))
+            .set_body_xml(build_status_xml("ok", Some("Ok".to_owned()), |_| Ok(())).unwrap())
     }
 }

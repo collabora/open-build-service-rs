@@ -2,13 +2,14 @@ use std::{borrow::Cow, fmt::Display, time::SystemTime};
 
 use http::{header::AUTHORIZATION, StatusCode};
 use wiremock::{Request, ResponseTemplate};
-use xml_builder::XMLElement;
 
 mod build;
 pub(crate) use build::*;
 
 mod source;
 pub(crate) use source::*;
+
+pub type XMLWriter = quick_xml::Writer<std::io::Cursor<Vec<u8>>>;
 
 // BasicAuth Adapted from http-rs/http-types crate
 pub struct BasicAuth {
@@ -53,29 +54,37 @@ impl BasicAuth {
     }
 }
 
-fn build_status_xml(code: &str, summary: Option<String>) -> XMLElement {
-    let mut status_xml = XMLElement::new("status");
-    status_xml.add_attribute("code", code);
+fn build_status_xml(
+    code: &str,
+    summary: Option<String>,
+    closure: impl Fn(&mut XMLWriter) -> quick_xml::Result<()>,
+) -> quick_xml::Result<XMLWriter> {
+    use quick_xml::events::BytesText;
 
-    if let Some(summary) = summary {
-        let mut summary_xml = XMLElement::new("summary");
-        summary_xml.add_text(summary).unwrap();
-
-        status_xml.add_child(summary_xml).unwrap();
-    }
-
+    let mut status_xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
     status_xml
+        .create_element("status")
+        .with_attribute(("code", code))
+        .write_inner_content(|writer| {
+            // TODO: Should this
+            if let Some(summary) = &summary {
+                writer
+                    .create_element("summary")
+                    .write_text_content(BytesText::from_plain_str(summary.as_str()))?;
+            }
+            closure(writer)
+        })?;
+
+    Ok(status_xml)
 }
 
 trait ResponseTemplateUtils {
-    fn set_body_xml(self, xml: XMLElement) -> Self;
+    fn set_body_xml(self, xml: XMLWriter) -> Self;
 }
 
 impl ResponseTemplateUtils for ResponseTemplate {
-    fn set_body_xml(self, xml: XMLElement) -> Self {
-        let mut body = vec![];
-        xml.render(&mut body, false, true).unwrap();
-        self.set_body_raw(body, "application/xml")
+    fn set_body_xml(self, xml: XMLWriter) -> Self {
+        self.set_body_raw(xml.into_inner().into_inner(), "application/xml")
     }
 }
 
@@ -95,8 +104,8 @@ impl ApiError {
         }
     }
 
-    fn into_xml(self) -> XMLElement {
-        build_status_xml(&self.code, Some(self.summary))
+    fn into_xml(self) -> XMLWriter {
+        build_status_xml(&self.code, Some(self.summary), |_| Ok(())).unwrap()
     }
 
     fn into_response(self) -> ResponseTemplate {
