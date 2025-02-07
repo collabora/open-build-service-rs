@@ -9,6 +9,6 @@ edition = "2018"
 [dependencies]
 serde = { version = "1.0.125",features = [ "derive" ] }
 serde_ini = "0.2.0"
-secret-service = "2.0.1"
+secret-service = "4.0.0"
 url = { version = "2.5.4", features = [ "serde" ] }
 thiserror = "1.0.24"
