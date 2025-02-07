@@ -21,13 +21,12 @@ struct MonitorData {
 
 impl MonitorData {
     fn from_result(r: ResultListResult, package: &str) -> Self {
-        let s = r
-            .get_status(package)
-            .expect("No status for current package");
         let code = if r.dirty {
             PackageCode::Unknown
         } else {
-            s.code
+            r.get_status(package)
+                .map(|s| s.code)
+                .unwrap_or(PackageCode::Unknown)
         };
         MonitorData {
             repository: r.repository,
