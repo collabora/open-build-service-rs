@@ -4,7 +4,6 @@ use std::str::FromStr;
 
 use wiremock::ResponseTemplate;
 use wiremock::{Request, Respond};
-use xml_builder::XMLElement;
 
 use crate::{MockBuildStatus, MockPackageCode, ObsMock};
 
@@ -12,7 +11,7 @@ use super::*;
 
 fn unknown_repo(project: &str, repo: &str) -> ApiError {
     ApiError::new(
-        StatusCode::NotFound,
+        StatusCode::NOT_FOUND,
         "404".to_owned(),
         format!("project '{}' has no repository '{}'", project, repo),
     )
@@ -20,7 +19,7 @@ fn unknown_repo(project: &str, repo: &str) -> ApiError {
 
 fn unknown_arch(project: &str, repo: &str, arch: &str) -> ApiError {
     ApiError::new(
-        StatusCode::NotFound,
+        StatusCode::NOT_FOUND,
         "404".to_owned(),
         format!(
             "repository '{}/{}' has no architecture '{}'",
@@ -31,7 +30,7 @@ fn unknown_arch(project: &str, repo: &str, arch: &str) -> ApiError {
 
 fn unknown_parameter(param: &str) -> ApiError {
     ApiError::new(
-        StatusCode::BadRequest,
+        StatusCode::BAD_REQUEST,
         "400".to_owned(),
         format!("unknown parameter '{}'", param),
     )
@@ -61,7 +60,7 @@ impl Respond for ProjectBuildCommandResponder {
 
         let cmd = try_api!(
             find_query_param(request, "cmd").ok_or_else(|| ApiError::new(
-                StatusCode::BadRequest,
+                StatusCode::BAD_REQUEST,
                 "missing_parameter".to_string(),
                 "Missing parameter 'cmd'".to_string()
             ))
@@ -76,7 +75,7 @@ impl Respond for ProjectBuildCommandResponder {
                         "package" => package_names.push(value.clone().into_owned()),
                         "arch" | "repository" | "code" | "lastbuild" => {
                             return ApiError::new(
-                                StatusCode::MisdirectedRequest,
+                                StatusCode::MISDIRECTED_REQUEST,
                                 "unsupported".to_string(),
                                 "Operation not supported by the OBS mock server".to_owned(),
                             )
@@ -102,11 +101,10 @@ impl Respond for ProjectBuildCommandResponder {
                         // error is wrapped *as a string* inside of a different
                         // error. Mimic the behavior here.
                         let inner_xml = unknown_package(package_name.to_owned()).into_xml();
-                        let mut inner = Vec::new();
-                        inner_xml.render(&mut inner, false, true).unwrap();
+                        let inner = inner_xml.into_inner().into_inner();
 
                         return ApiError::new(
-                            StatusCode::NotFound,
+                            StatusCode::NOT_FOUND,
                             "not_found".to_owned(),
                             String::from_utf8_lossy(&inner).into_owned(),
                         )
@@ -134,10 +132,11 @@ impl Respond for ProjectBuildCommandResponder {
                     }
                 }
 
-                ResponseTemplate::new(StatusCode::Ok).set_body_xml(build_status_xml("ok", None))
+                ResponseTemplate::new(StatusCode::OK)
+                    .set_body_xml(build_status_xml("ok", None, |_| Ok(())).unwrap())
             }
             _ => ApiError::new(
-                StatusCode::BadRequest,
+                StatusCode::BAD_REQUEST,
                 "illegal_request".to_owned(),
                 format!("unsupported POST command {} to {}", cmd, request.url),
             )
@@ -168,12 +167,18 @@ impl Respond for RepoListingResponder {
             .get(project_name)
             .ok_or_else(|| unknown_project(project_name.to_owned())));
 
-        let mut xml = XMLElement::new("directory");
-        for repo_name in project.repos.keys() {
-            let mut entry_xml = XMLElement::new("entry");
-            entry_xml.add_attribute("name", repo_name);
-            xml.add_child(entry_xml).unwrap();
-        }
+        let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+        xml.create_element("directory")
+            .write_inner_content(|writer| {
+                for repo_name in project.repos.keys() {
+                    writer
+                        .create_element("entry")
+                        .with_attribute(("name", repo_name.as_str()))
+                        .write_empty()?;
+                }
+                Ok(())
+            })
+            .unwrap();
 
         ResponseTemplate::new(200).set_body_xml(xml)
     }
@@ -206,14 +211,20 @@ impl Respond for ArchListingResponder {
             .get(repo_name)
             .ok_or_else(|| unknown_repo(project_name, repo_name)));
 
-        let mut xml = XMLElement::new("directory");
-        for arch in arches.keys() {
-            let mut child_xml = XMLElement::new("entry");
-            child_xml.add_attribute("name", arch);
-            xml.add_child(child_xml).unwrap();
-        }
+        let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+        xml.create_element("directory")
+            .write_inner_content(|writer| {
+                for arch in arches.keys() {
+                    writer
+                        .create_element("entry")
+                        .with_attribute(("name", arch.as_str()))
+                        .write_empty()?;
+                }
+                Ok(())
+            })
+            .unwrap();
 
-        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+        ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
     }
 }
 
@@ -227,19 +238,28 @@ impl BuildResultsResponder {
     }
 }
 
-fn package_status_xml(package_name: &str, status: &MockBuildStatus) -> XMLElement {
-    let mut xml = XMLElement::new("status");
-    xml.add_attribute("package", package_name);
-    xml.add_attribute("code", &status.code.to_string());
+fn package_status_xml(
+    xml: &mut XMLWriter,
+    package_name: &str,
+    status: &MockBuildStatus,
+) -> quick_xml::Result<()> {
+    use quick_xml::events::BytesText;
+    let mut status_xml = xml.create_element("status").with_attributes([
+        ("package", package_name),
+        ("code", &status.code.to_string()),
+    ]);
     if status.dirty {
-        xml.add_attribute("dirty", "true");
+        status_xml = status_xml.with_attribute(("dirty", "true"));
     }
 
-    let mut details_xml = XMLElement::new("details");
-    details_xml.add_text(status.details.clone()).unwrap();
-    xml.add_child(details_xml).unwrap();
+    status_xml.write_inner_content(|writer| {
+        writer
+            .create_element("details")
+            .write_text_content(BytesText::from_plain_str(status.details.as_str()))?;
+        Ok(())
+    })?;
 
-    xml
+    Ok(())
 }
 
 impl Respond for BuildResultsResponder {
@@ -267,40 +287,57 @@ impl Respond for BuildResultsResponder {
             );
         }
 
-        let mut xml = XMLElement::new("resultlist");
-        // Using a random 'state' value for now, need to figure out how
-        // these are computed.
-        xml.add_attribute("state", "3ff37f67d60b76bd0491a5243311ba81");
+        let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+        xml.create_element("resultlist")
+            // Using a random 'state' value for now, need to figure out how
+            // these are computed.
+            .with_attribute(("state", "3ff37f67d60b76bd0491a5243311ba81"))
+            .write_inner_content(|writer| {
+                for (repo_name, arches) in &project.repos {
+                    for (arch, repo) in arches {
+                        let result_xml = writer.create_element("result").with_attributes([
+                            ("project", project_name),
+                            ("repository", repo_name.as_str()),
+                            ("arch", arch.as_str()),
+                            ("code", repo.code.to_string().as_str()),
+                            // Deprecated alias for 'code'.
+                            ("state", repo.code.to_string().as_str()),
+                        ]);
 
-        for (repo_name, arches) in &project.repos {
-            for (arch, repo) in arches {
-                let mut result_xml = XMLElement::new("result");
-                result_xml.add_attribute("project", project_name);
-                result_xml.add_attribute("repository", repo_name);
-                result_xml.add_attribute("arch", arch);
-                result_xml.add_attribute("code", &repo.code.to_string());
-                // Deprecated alias for 'code'.
-                result_xml.add_attribute("state", &repo.code.to_string());
-
-                if package_filters.is_empty() {
-                    for (package_name, package) in &repo.packages {
-                        result_xml
-                            .add_child(package_status_xml(package_name, &package.status))
-                            .unwrap();
-                    }
-                } else {
-                    for package_name in &package_filters {
-                        if let Some(package) = repo.packages.get(package_name.as_ref()) {
+                        if package_filters.is_empty() {
                             result_xml
-                                .add_child(package_status_xml(package_name, &package.status))
+                                .write_inner_content(|writer| {
+                                    for (package_name, package) in &repo.packages {
+                                        package_status_xml(writer, package_name, &package.status)
+                                            .unwrap();
+                                    }
+                                    Ok(())
+                                })
+                                .unwrap();
+                        } else {
+                            result_xml
+                                .write_inner_content(|writer| {
+                                    for package_name in &package_filters {
+                                        if let Some(package) =
+                                            repo.packages.get(package_name.as_ref())
+                                        {
+                                            package_status_xml(
+                                                writer,
+                                                package_name,
+                                                &package.status,
+                                            )
+                                            .unwrap();
+                                        }
+                                    }
+                                    Ok(())
+                                })
                                 .unwrap();
                         }
                     }
                 }
-
-                xml.add_child(result_xml).unwrap();
-            }
-        }
+                Ok(())
+            })
+            .unwrap();
 
         ResponseTemplate::new(200).set_body_xml(xml)
     }
@@ -330,7 +367,7 @@ impl Respond for BuildJobHistoryResponder {
                 "code" => code_names.push(value.into_owned()),
                 "limit" if limit.is_some() => {
                     return ApiError::new(
-                        StatusCode::Ok,
+                        StatusCode::OK,
                         "400".to_owned(),
                         "parameter 'limit' set multiple times".to_owned(),
                     )
@@ -368,49 +405,57 @@ impl Respond for BuildJobHistoryResponder {
             }
         }
 
-        let mut xml = XMLElement::new("jobhistlist");
-        let mut entries_added = 0;
+        let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+        xml.create_element("jobhistlist")
+            .write_inner_content(|writer| {
+                let mut entries_added = 0;
 
-        for entry in &arch.jobhist {
-            if (!package_names.is_empty() && !package_names.contains(&entry.package))
-                || (!codes.is_empty() && !codes.contains(&entry.code))
-            {
-                continue;
-            }
+                for entry in &arch.jobhist {
+                    if (!package_names.is_empty() && !package_names.contains(&entry.package))
+                        || (!codes.is_empty() && !codes.contains(&entry.code))
+                    {
+                        continue;
+                    }
 
-            let mut jobhist_xml = XMLElement::new("jobhist");
-            jobhist_xml.add_attribute("package", &entry.package);
-            jobhist_xml.add_attribute("rev", &entry.rev);
-            jobhist_xml.add_attribute("srcmd5", &entry.srcmd5);
-            jobhist_xml.add_attribute("versrel", &entry.versrel);
-            jobhist_xml.add_attribute("bcnt", &entry.bcnt.to_string());
-            jobhist_xml.add_attribute(
-                "readytime",
-                &seconds_since_epoch(&entry.readytime).to_string(),
-            );
-            jobhist_xml.add_attribute(
-                "starttime",
-                &seconds_since_epoch(&entry.starttime).to_string(),
-            );
-            jobhist_xml.add_attribute("endtime", &seconds_since_epoch(&entry.endtime).to_string());
-            jobhist_xml.add_attribute("code", &entry.code.to_string());
-            jobhist_xml.add_attribute("uri", &entry.uri);
-            jobhist_xml.add_attribute("workerid", &entry.workerid);
-            jobhist_xml.add_attribute("hostarch", &entry.hostarch);
-            jobhist_xml.add_attribute("reason", &entry.reason);
-            jobhist_xml.add_attribute("verifymd5", &entry.verifymd5);
+                    writer
+                        .create_element("jobhist")
+                        .with_attributes([
+                            ("package", entry.package.as_str()),
+                            ("rev", &entry.rev),
+                            ("srcmd5", &entry.srcmd5),
+                            ("versrel", &entry.versrel),
+                            ("bcnt", &entry.bcnt.to_string()),
+                            (
+                                "readytime",
+                                &seconds_since_epoch(&entry.readytime).to_string(),
+                            ),
+                            (
+                                "starttime",
+                                &seconds_since_epoch(&entry.starttime).to_string(),
+                            ),
+                            ("endtime", &seconds_since_epoch(&entry.endtime).to_string()),
+                            ("code", &entry.code.to_string()),
+                            ("uri", &entry.uri),
+                            ("workerid", &entry.workerid),
+                            ("hostarch", &entry.hostarch),
+                            ("reason", &entry.reason),
+                            ("verifymd5", &entry.verifymd5),
+                        ])
+                        .write_empty()?;
+                    entries_added += 1;
 
-            xml.add_child(jobhist_xml).unwrap();
-            entries_added += 1;
-
-            if let Some(limit) = limit {
-                if limit > 0 && entries_added >= limit {
-                    break;
+                    if let Some(limit) = limit {
+                        if limit > 0 && entries_added >= limit {
+                            break;
+                        }
+                    }
                 }
-            }
-        }
 
-        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+                Ok(())
+            })
+            .unwrap();
+
+        ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
     }
 }
 
@@ -453,19 +498,26 @@ impl Respond for BuildBinaryListResponder {
                 .get(arch)
                 .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
 
-        let mut xml = XMLElement::new("binarylist");
-        if let Some(package) = arch.packages.get(package_name) {
-            for (name, binary) in &package.binaries {
-                let mut binary_xml = XMLElement::new("binary");
-                binary_xml.add_attribute("filename", name);
-                binary_xml.add_attribute("size", &binary.contents.len().to_string());
-                binary_xml.add_attribute("mtime", &seconds_since_epoch(&binary.mtime).to_string());
+        let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+        xml.create_element("binarylist")
+            .write_inner_content(|writer| {
+                if let Some(package) = arch.packages.get(package_name) {
+                    for (name, binary) in &package.binaries {
+                        writer
+                            .create_element("binary")
+                            .with_attributes([
+                                ("filename", name.as_str()),
+                                ("size", &binary.contents.len().to_string()),
+                                ("mtime", &seconds_since_epoch(&binary.mtime).to_string()),
+                            ])
+                            .write_empty()?;
+                    }
+                }
+                Ok(())
+            })
+            .unwrap();
 
-                xml.add_child(binary_xml).unwrap();
-            }
-        }
-
-        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+        ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
     }
 }
 
@@ -513,11 +565,11 @@ impl Respond for BuildBinaryFileResponder {
         let file = try_api!(package
             .and_then(|package| package.binaries.get(file_name))
             .ok_or_else(|| ApiError::new(
-                StatusCode::NotFound,
+                StatusCode::NOT_FOUND,
                 "404".to_owned(),
                 format!("{}: No such file or directory", file_name)
             )));
-        ResponseTemplate::new(StatusCode::Ok)
+        ResponseTemplate::new(StatusCode::OK)
             .set_body_raw(file.contents.clone(), "application/octet-stream")
     }
 }
@@ -562,14 +614,22 @@ impl Respond for BuildPackageStatusResponder {
                 .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
 
         let package = arch.packages.get(package_name);
-        ResponseTemplate::new(StatusCode::Ok).set_body_xml(package.map_or_else(
+        ResponseTemplate::new(StatusCode::OK).set_body_xml(package.map_or_else(
             || {
+                let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
                 package_status_xml(
+                    &mut xml,
                     package_name,
                     &MockBuildStatus::new(MockPackageCode::Unknown),
                 )
+                .unwrap();
+                xml
             },
-            |package| package_status_xml(package_name, &package.status),
+            |package| {
+                let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+                package_status_xml(&mut xml, package_name, &package.status).unwrap();
+                xml
+            },
         ))
     }
 }
@@ -587,7 +647,7 @@ impl BuildLogResponder {
 fn parse_number_param(value: Cow<str>) -> Result<usize, ApiError> {
     if value.is_empty() {
         return Err(ApiError::new(
-            StatusCode::BadRequest,
+            StatusCode::BAD_REQUEST,
             "400".to_owned(),
             "number is empty".to_owned(),
         ));
@@ -595,7 +655,7 @@ fn parse_number_param(value: Cow<str>) -> Result<usize, ApiError> {
 
     value.as_ref().parse().map_err(|_| {
         ApiError::new(
-            StatusCode::BadRequest,
+            StatusCode::BAD_REQUEST,
             "400".to_owned(),
             format!("not a number: '{}'", value),
         )
@@ -607,7 +667,7 @@ fn parse_bool_param(value: Cow<str>) -> Result<bool, ApiError> {
         "1" => Ok(true),
         "0" => Ok(false),
         _ => Err(ApiError::new(
-            StatusCode::BadRequest,
+            StatusCode::BAD_REQUEST,
             "400".to_owned(),
             "not a boolean".to_owned(),
         )),
@@ -646,7 +706,7 @@ impl Respond for BuildLogResponder {
                     ensure!(
                         value == "entry",
                         ApiError::new(
-                            StatusCode::BadRequest,
+                            StatusCode::BAD_REQUEST,
                             "400".to_owned(),
                             format!("unknown view '{}'", value)
                         )
@@ -682,7 +742,7 @@ impl Respond for BuildLogResponder {
                 .get(arch)
                 .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
         let package = try_api!(arch.packages.get(package_name).ok_or_else(|| ApiError::new(
-            StatusCode::BadRequest,
+            StatusCode::BAD_REQUEST,
             "400".to_owned(),
             format!("remote error: {} no logfile", package_name)
         )));
@@ -694,25 +754,32 @@ impl Respond for BuildLogResponder {
         };
 
         if entry_view {
-            let mut xml = XMLElement::new("directory");
+            let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
             // XXX: Not sure what to do if no logs are present, for now just
             // return no file.
-            if let Some(log) = log {
-                let mut entry_xml = XMLElement::new("entry");
-                entry_xml.add_attribute("name", "_log");
-                entry_xml.add_attribute("size", &log.contents.len().to_string());
-                entry_xml.add_attribute("mtime", &seconds_since_epoch(&log.mtime).to_string());
+            xml.create_element("directory")
+                .write_inner_content(|writer| {
+                    if let Some(log) = log {
+                        writer
+                            .create_element("entry")
+                            .with_attributes([
+                                ("name", "_log"),
+                                ("size", &log.contents.len().to_string()),
+                                ("mtime", &seconds_since_epoch(&log.mtime).to_string()),
+                            ])
+                            .write_empty()?;
+                    }
+                    Ok(())
+                })
+                .unwrap();
 
-                xml.add_child(entry_xml).unwrap();
-            }
-
-            ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+            ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
         } else {
             let contents = log.as_ref().map_or("", |log| &log.contents);
             ensure!(
                 start <= contents.len(),
                 ApiError::new(
-                    StatusCode::BadRequest,
+                    StatusCode::BAD_REQUEST,
                     "400".to_owned(),
                     format!("remote error: start out of range  {}", start)
                 )
@@ -727,7 +794,7 @@ impl Respond for BuildLogResponder {
                     .unwrap_or(end),
             );
 
-            ResponseTemplate::new(StatusCode::Ok).set_body_string(&contents[start..end])
+            ResponseTemplate::new(StatusCode::OK).set_body_string(&contents[start..end])
         }
     }
 }
@@ -775,22 +842,28 @@ impl Respond for BuildHistoryResponder {
                 .get(arch)
                 .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
 
-        let mut xml = XMLElement::new("buildhistory");
+        let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+        xml.create_element("buildhistory")
+            .write_inner_content(|writer| {
+                if let Some(package) = arch.packages.get(package_name) {
+                    for entry in &package.history {
+                        writer
+                            .create_element("entry")
+                            .with_attributes([
+                                ("rev", entry.rev.as_str()),
+                                ("srcmd5", &entry.srcmd5),
+                                ("versrel", &entry.versrel),
+                                ("bcnt", &entry.bcnt.to_string()),
+                                ("time", &seconds_since_epoch(&entry.time).to_string()),
+                                ("duration", &entry.duration.as_secs().to_string()),
+                            ])
+                            .write_empty()?;
+                    }
+                }
+                Ok(())
+            })
+            .unwrap();
 
-        if let Some(package) = arch.packages.get(package_name) {
-            for entry in &package.history {
-                let mut entry_xml = XMLElement::new("entry");
-                entry_xml.add_attribute("rev", &entry.rev);
-                entry_xml.add_attribute("srcmd5", &entry.srcmd5);
-                entry_xml.add_attribute("versrel", &entry.versrel);
-                entry_xml.add_attribute("bcnt", &entry.bcnt.to_string());
-                entry_xml.add_attribute("time", &seconds_since_epoch(&entry.time).to_string());
-                entry_xml.add_attribute("duration", &entry.duration.as_secs().to_string());
-
-                xml.add_child(entry_xml).unwrap();
-            }
-        }
-
-        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+        ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
     }
 }

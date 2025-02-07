@@ -1,8 +1,7 @@
 use std::{borrow::Cow, fmt::Display, time::SystemTime};
 
-use http_types::{auth::BasicAuth, StatusCode};
+use http::{header::AUTHORIZATION, StatusCode};
 use wiremock::{Request, ResponseTemplate};
-use xml_builder::XMLElement;
 
 mod build;
 pub(crate) use build::*;
@@ -10,29 +9,82 @@ pub(crate) use build::*;
 mod source;
 pub(crate) use source::*;
 
-fn build_status_xml(code: &str, summary: Option<String>) -> XMLElement {
-    let mut status_xml = XMLElement::new("status");
-    status_xml.add_attribute("code", code);
+pub type XMLWriter = quick_xml::Writer<std::io::Cursor<Vec<u8>>>;
 
-    if let Some(summary) = summary {
-        let mut summary_xml = XMLElement::new("summary");
-        summary_xml.add_text(summary).unwrap();
+// BasicAuth Adapted from http-rs/http-types crate
+pub struct BasicAuth {
+    username: String,
+    password: String,
+}
 
-        status_xml.add_child(summary_xml).unwrap();
+impl BasicAuth {
+    pub fn new<U: AsRef<str>, P: AsRef<str>>(username: U, password: P) -> Self {
+        Self {
+            username: username.as_ref().to_owned(),
+            password: password.as_ref().to_owned(),
+        }
     }
 
+    pub fn from_credentials(credentials: impl AsRef<[u8]>) -> Result<Self, ()> {
+        use base64ct::{Base64, Encoding};
+        let credentials = std::str::from_utf8(credentials.as_ref()).map_err(|_| ())?;
+        let bytes = Base64::decode_vec(credentials).map_err(|_| ())?;
+
+        let credentials = String::from_utf8(bytes).map_err(|_| ())?;
+
+        let mut iter = credentials.splitn(2, ':');
+        let username = iter.next();
+        let password = iter.next();
+
+        let (username, password) = match (username, password) {
+            (Some(username), Some(password)) => (username.to_string(), password.to_string()),
+            (Some(_), None) => return Err(()),
+            (None, _) => return Err(()),
+        };
+
+        Ok(Self { username, password })
+    }
+
+    pub fn username(&self) -> &str {
+        self.username.as_str()
+    }
+
+    pub fn password(&self) -> &str {
+        self.password.as_str()
+    }
+}
+
+fn build_status_xml(
+    code: &str,
+    summary: Option<String>,
+    closure: impl Fn(&mut XMLWriter) -> quick_xml::Result<()>,
+) -> quick_xml::Result<XMLWriter> {
+    use quick_xml::events::BytesText;
+
+    let mut status_xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
     status_xml
+        .create_element("status")
+        .with_attribute(("code", code))
+        .write_inner_content(|writer| {
+            // TODO: Should this
+            if let Some(summary) = &summary {
+                writer
+                    .create_element("summary")
+                    .write_text_content(BytesText::from_plain_str(summary.as_str()))?;
+            }
+            closure(writer)
+        })?;
+
+    Ok(status_xml)
 }
 
 trait ResponseTemplateUtils {
-    fn set_body_xml(self, xml: XMLElement) -> Self;
+    fn set_body_xml(self, xml: XMLWriter) -> Self;
 }
 
 impl ResponseTemplateUtils for ResponseTemplate {
-    fn set_body_xml(self, xml: XMLElement) -> Self {
-        let mut body = vec![];
-        xml.render(&mut body, false, true).unwrap();
-        self.set_body_raw(body, "application/xml")
+    fn set_body_xml(self, xml: XMLWriter) -> Self {
+        self.set_body_raw(xml.into_inner().into_inner(), "application/xml")
     }
 }
 
@@ -52,8 +104,8 @@ impl ApiError {
         }
     }
 
-    fn into_xml(self) -> XMLElement {
-        build_status_xml(&self.code, Some(self.summary))
+    fn into_xml(self) -> XMLWriter {
+        build_status_xml(&self.code, Some(self.summary), |_| Ok(())).unwrap()
     }
 
     fn into_response(self) -> ResponseTemplate {
@@ -69,25 +121,26 @@ impl Display for ApiError {
 
 fn unknown_project(project: String) -> ApiError {
     ApiError {
-        http_status: StatusCode::NotFound,
+        http_status: StatusCode::NOT_FOUND,
         code: "unknown_project".to_owned(),
         summary: project,
     }
 }
 
 fn unknown_package(package: String) -> ApiError {
-    ApiError::new(StatusCode::NotFound, "unknown_package".to_owned(), package)
+    ApiError::new(StatusCode::NOT_FOUND, "unknown_package".to_owned(), package)
 }
 
 fn check_auth(auth: &BasicAuth, request: &Request) -> Result<(), ApiError> {
     let given_auth = request
         .headers
-        .get(&"authorization".into())
-        .and_then(|auth| auth.last().as_str().strip_prefix("Basic "))
+        .get(AUTHORIZATION)
+        .and_then(|auth| auth.to_str().ok())
+        .and_then(|s| s.strip_prefix("Basic "))
         .and_then(|creds| BasicAuth::from_credentials(creds.trim().as_bytes()).ok())
         .ok_or_else(|| {
             ApiError::new(
-                StatusCode::Unauthorized,
+                StatusCode::UNAUTHORIZED,
                 "authentication_required".to_owned(),
                 "Authentication required".to_owned(),
             )
@@ -97,7 +150,7 @@ fn check_auth(auth: &BasicAuth, request: &Request) -> Result<(), ApiError> {
         Ok(())
     } else {
         Err(ApiError::new(
-            StatusCode::Unauthorized,
+            StatusCode::UNAUTHORIZED,
             "authentication_required".to_owned(),
             format!(
                 "Unknown user '{}' or invalid password",

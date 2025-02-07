@@ -14,7 +14,6 @@ use api::{
     ProjectDeleteResponder, ProjectListingResponder, ProjectMetaResponder, RepoListingResponder,
 };
 
-use http_types::auth::BasicAuth;
 use md5::{Digest, Md5};
 use strum_macros::{Display, EnumString};
 use wiremock::{
@@ -22,9 +21,10 @@ use wiremock::{
     matchers::{method, path_regex},
     Mock, MockServer,
 };
-use xml_builder::XMLElement;
 
 mod api;
+
+use crate::api::{BasicAuth, XMLWriter};
 
 pub const ADMIN_USER: &str = "Admin";
 
@@ -72,39 +72,42 @@ impl MockSourceFile {
         package: &str,
         disabled: &[MockPackageDisabledBuild],
     ) -> MockSourceFile {
-        let mut xml = XMLElement::new("package");
-        xml.add_attribute("project", project);
-        xml.add_attribute("name", package);
+        let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+        xml.create_element("package")
+            .with_attributes([("project", project), ("name", package)])
+            .write_inner_content(|writer| {
+                writer.create_element("title").write_empty()?;
+                writer.create_element("description").write_empty()?;
 
-        xml.add_child(XMLElement::new("title")).unwrap();
-        xml.add_child(XMLElement::new("description")).unwrap();
+                if !disabled.is_empty() {
+                    writer
+                        .create_element("build")
+                        .write_inner_content(|build_writer| {
+                            for disabled_build in disabled {
+                                let mut disable_xml = build_writer.create_element("disable");
 
-        if !disabled.is_empty() {
-            let mut build_xml = XMLElement::new("build");
+                                if let Some(repository) = &disabled_build.repository {
+                                    disable_xml = disable_xml
+                                        .with_attribute(("repository", repository.as_str()));
+                                }
 
-            for disabled_build in disabled {
-                let mut disable_xml = XMLElement::new("disable");
+                                if let Some(arch) = &disabled_build.arch {
+                                    disable_xml =
+                                        disable_xml.with_attribute(("arch", arch.as_str()));
+                                }
 
-                if let Some(repository) = &disabled_build.repository {
-                    disable_xml.add_attribute("repository", repository);
+                                disable_xml.write_empty()?;
+                            }
+                            Ok(())
+                        })?;
                 }
-
-                if let Some(arch) = &disabled_build.arch {
-                    disable_xml.add_attribute("arch", arch);
-                }
-
-                build_xml.add_child(disable_xml).unwrap();
-            }
-
-            xml.add_child(build_xml).unwrap();
-        }
-
-        let mut contents = vec![];
-        xml.render(&mut contents, false, true).unwrap();
+                Ok(())
+            })
+            .unwrap();
 
         MockSourceFile {
             path: MockSourceFile::META_PATH.to_owned(),
-            contents,
+            contents: xml.into_inner().into_inner(),
         }
     }
 
@@ -195,7 +198,7 @@ pub enum MockRepositoryCode {
     Unpublished,
 }
 
-#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash, Default)]
 #[strum(serialize_all = "snake_case")]
 pub enum MockPackageCode {
     Unresolvable,
@@ -207,16 +210,11 @@ pub enum MockPackageCode {
     Excluded,
     Blocked,
     Locked,
+    #[default]
     Unknown,
     Scheduled,
     Building,
     Finished,
-}
-
-impl Default for MockPackageCode {
-    fn default() -> Self {
-        MockPackageCode::Unknown
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -526,32 +524,22 @@ struct MockRepository {
     jobhist: Vec<MockJobHistoryEntry>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Display, EnumString)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Display, EnumString, Default)]
 #[strum(serialize_all = "snake_case")]
 pub enum MockRebuildMode {
+    #[default]
     Transitive,
     Direct,
     Local,
 }
 
-impl Default for MockRebuildMode {
-    fn default() -> Self {
-        MockRebuildMode::Transitive
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Display, EnumString)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Display, EnumString, Default)]
 #[strum(serialize_all = "snake_case")]
 pub enum MockBlockMode {
+    #[default]
     All,
     Local,
     Never,
-}
-
-impl Default for MockBlockMode {
-    fn default() -> Self {
-        MockBlockMode::All
-    }
 }
 
 #[derive(Default)]
@@ -567,7 +555,7 @@ struct MockProject {
 
 type ProjectMap = HashMap<String, MockProject>;
 
-fn get_project<'p, 'n>(projects: &'p mut ProjectMap, name: &'n str) -> &'p mut MockProject {
+fn get_project<'p>(projects: &'p mut ProjectMap, name: &str) -> &'p mut MockProject {
     projects
         .get_mut(name)
         .unwrap_or_else(|| panic!("Unknown project: {}", name))
@@ -594,7 +582,7 @@ fn get_repo<'p, 'n>(
         .unwrap_or_else(|| panic!("Unknown arch: {}/{}", repo_name, arch))
 }
 
-fn get_package<'p, 'n>(project: &'p mut MockProject, name: &'n str) -> &'p mut MockPackage {
+fn get_package<'p>(project: &'p mut MockProject, name: &str) -> &'p mut MockPackage {
     project
         .packages
         .get_mut(name)
@@ -890,7 +878,7 @@ impl ObsMock {
         project
             .repos
             .entry(repo_name)
-            .or_insert_with(HashMap::new)
+            .or_default()
             .entry(arch)
             .and_modify(|repo| repo.code = code)
             .or_insert_with(|| MockRepository {

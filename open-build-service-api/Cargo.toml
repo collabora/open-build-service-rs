@@ -8,10 +8,10 @@ license = "MIT OR Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-reqwest = { version = "0.11.3", features = [ "stream" ] }
-url = "2.2.1"
-quick-xml = { version = "0.22.0", features = [ "serialize" ] }
-serde = { version = "1", features = [ "derive" ] }
+reqwest = { version = "0.11.27", features = [ "stream" ] }
+url = "2.5.4"
+quick-xml = { version = "0.23.1", features = [ "serialize" ] }
+serde = { version = "1.0.125", features = [ "derive" ] }
 chrono = { version = "0.4", features = [ "serde" ] }
 thiserror = "1.0.24"
 futures = "0.3.14"
@@ -23,7 +23,7 @@ strum_macros = "0.23"
 [dev-dependencies]
 open-build-service-mock = { path = "../open-build-service-mock" }
 oscrc = { path = "../oscrc" }
-url = { version = "2.2", features = [ "serde" ] }
+url = { version = "2.5.4", features = [ "serde" ] }
 structopt = "0.3.21"
 anyhow = "1.0.40"
-tokio = { version = "1.5.0", features = [ "full" ] }
+tokio = { version = "1.35.0", features = [ "full" ] }
