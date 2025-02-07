@@ -1,13 +1,13 @@
 use anyhow::{Context, Result};
+use clap::Parser;
 use futures::prelude::*;
 use open_build_service_api::{Client, PackageLogStreamOptions};
 use oscrc::Oscrc;
 use std::path::PathBuf;
-use structopt::StructOpt;
 use tokio::io::AsyncWriteExt;
 use url::Url;
 
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 struct PackageFull {
     project: String,
     package: String,
@@ -15,13 +15,13 @@ struct PackageFull {
     arch: String,
 }
 
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 struct Package {
     project: String,
     package: String,
 }
 
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 struct BuildResult {
     project: String,
     package: Option<String>,
@@ -80,7 +80,7 @@ async fn result(client: Client, opts: BuildResult) -> Result<()> {
     Ok(())
 }
 
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 enum Command {
     Jobstatus(PackageFull),
     History(PackageFull),
@@ -90,23 +90,23 @@ enum Command {
     Result(BuildResult),
 }
 
-#[derive(StructOpt)]
+#[derive(Parser)]
 struct Opts {
-    #[structopt(long, short)]
+    #[arg(long, short)]
     apiurl: Option<Url>,
-    #[structopt(long, short, default_value = "/home/sjoerd/.oscrc")]
+    #[arg(long, short, default_value = "/home/sjoerd/.oscrc")]
     config: PathBuf,
-    #[structopt(long, short, requires("pass"))]
+    #[arg(long, short, requires = "pass")]
     user: Option<String>,
-    #[structopt(long, short, requires("user"))]
+    #[arg(long, short, requires = "user")]
     pass: Option<String>,
-    #[structopt(subcommand)]
+    #[command(subcommand)]
     command: Command,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let opts = Opts::from_args();
+    let opts = Opts::parse();
     let (url, user, pass) = match opts {
         Opts {
             apiurl: Some(url),

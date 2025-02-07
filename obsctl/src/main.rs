@@ -1,12 +1,12 @@
 use anyhow::{bail, Context, Result};
+use clap::Parser;
 use open_build_service_api::{Client, PackageCode, ResultListResult};
 use oscrc::Oscrc;
 use std::path::PathBuf;
 use std::time::Duration;
-use structopt::StructOpt;
 use url::Url;
 
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 struct Package {
     project: String,
     package: String,
@@ -84,28 +84,28 @@ async fn monitor(client: Client, opts: Package) -> Result<()> {
     Ok(())
 }
 
-#[derive(StructOpt, Debug)]
+#[derive(Parser, Debug)]
 enum Command {
     Monitor(Package),
 }
 
-#[derive(StructOpt)]
+#[derive(Parser, Debug)]
 struct Opts {
-    #[structopt(long, short)]
+    #[arg(long, short)]
     apiurl: Option<Url>,
-    #[structopt(long, short, default_value = "/home/sjoerd/.oscrc")]
+    #[arg(long, short, default_value = "/home/sjoerd/.oscrc")]
     config: PathBuf,
-    #[structopt(long, short, requires("pass"))]
+    #[arg(long, short, requires = "pass")]
     user: Option<String>,
-    #[structopt(long, short, requires("user"))]
+    #[arg(long, short, requires = "user")]
     pass: Option<String>,
-    #[structopt(subcommand)]
+    #[command(subcommand)]
     command: Command,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let opts = Opts::from_args();
+    let opts = Opts::parse();
     let (url, user, pass) = match opts {
         Opts {
             apiurl: Some(url),

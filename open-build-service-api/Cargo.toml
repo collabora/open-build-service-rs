@@ -24,6 +24,7 @@ strum_macros = "0.23"
 open-build-service-mock = { path = "../open-build-service-mock" }
 oscrc = { path = "../oscrc" }
 url = { version = "2.5.4", features = [ "serde" ] }
-structopt = "0.3.21"
+clap = { version = "4.5.28", features = ["derive"] }
+clap_derive = "4.5.28"
 anyhow = "1.0.40"
 tokio = { version = "1.35.0", features = [ "full" ] }

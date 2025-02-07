@@ -11,6 +11,7 @@ license = "MIT OR Apache-2.0"
 open-build-service-api = { path = "../open-build-service-api" }
 oscrc = { path = "../oscrc" }
 url = { version = "2.5.4", features = [ "serde" ] }
-structopt = "0.3.21"
 anyhow = "1.0.40"
 tokio = { version = "1.35.0", features = [ "full" ] }
+clap = { version = "4.5.28", features = ["derive"] }
+clap_derive = "4.5.28"
