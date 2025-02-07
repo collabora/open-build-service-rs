@@ -11,4 +11,4 @@ serde = { version = "1.0.125",features = [ "derive" ] }
 serde_ini = "0.2.0"
 secret-service = "2.0.1"
 url = { version = "2.5.4", features = [ "serde" ] }
-thiserror = "1.0.24"
+thiserror = "2.0.11"
