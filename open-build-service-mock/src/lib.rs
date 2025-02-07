@@ -21,11 +21,10 @@ use wiremock::{
     matchers::{method, path_regex},
     Mock, MockServer,
 };
-use xml_builder::XMLElement;
 
 mod api;
 
-use crate::api::BasicAuth;
+use crate::api::{BasicAuth, XMLWriter};
 
 pub const ADMIN_USER: &str = "Admin";
 
@@ -73,39 +72,42 @@ impl MockSourceFile {
         package: &str,
         disabled: &[MockPackageDisabledBuild],
     ) -> MockSourceFile {
-        let mut xml = XMLElement::new("package");
-        xml.add_attribute("project", project);
-        xml.add_attribute("name", package);
+        let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
+        xml.create_element("package")
+            .with_attributes([("project", project), ("name", package)])
+            .write_inner_content(|writer| {
+                writer.create_element("title").write_empty()?;
+                writer.create_element("description").write_empty()?;
 
-        xml.add_child(XMLElement::new("title")).unwrap();
-        xml.add_child(XMLElement::new("description")).unwrap();
+                if !disabled.is_empty() {
+                    writer
+                        .create_element("build")
+                        .write_inner_content(|build_writer| {
+                            for disabled_build in disabled {
+                                let mut disable_xml = build_writer.create_element("disable");
 
-        if !disabled.is_empty() {
-            let mut build_xml = XMLElement::new("build");
+                                if let Some(repository) = &disabled_build.repository {
+                                    disable_xml = disable_xml
+                                        .with_attribute(("repository", repository.as_str()));
+                                }
 
-            for disabled_build in disabled {
-                let mut disable_xml = XMLElement::new("disable");
+                                if let Some(arch) = &disabled_build.arch {
+                                    disable_xml =
+                                        disable_xml.with_attribute(("arch", arch.as_str()));
+                                }
 
-                if let Some(repository) = &disabled_build.repository {
-                    disable_xml.add_attribute("repository", repository);
+                                disable_xml.write_empty()?;
+                            }
+                            Ok(())
+                        })?;
                 }
-
-                if let Some(arch) = &disabled_build.arch {
-                    disable_xml.add_attribute("arch", arch);
-                }
-
-                build_xml.add_child(disable_xml).unwrap();
-            }
-
-            xml.add_child(build_xml).unwrap();
-        }
-
-        let mut contents = vec![];
-        xml.render(&mut contents, false, true).unwrap();
+                Ok(())
+            })
+            .unwrap();
 
         MockSourceFile {
             path: MockSourceFile::META_PATH.to_owned(),
-            contents,
+            contents: xml.into_inner().into_inner(),
         }
     }
 
