@@ -1,6 +1,6 @@
 use std::{borrow::Cow, fmt::Display, time::SystemTime};
 
-use http_types::{auth::BasicAuth, StatusCode};
+use http::{header::AUTHORIZATION, StatusCode};
 use wiremock::{Request, ResponseTemplate};
 use xml_builder::XMLElement;
 
@@ -9,6 +9,49 @@ pub(crate) use build::*;
 
 mod source;
 pub(crate) use source::*;
+
+// BasicAuth Adapted from http-rs/http-types crate
+pub struct BasicAuth {
+    username: String,
+    password: String,
+}
+
+impl BasicAuth {
+    pub fn new<U: AsRef<str>, P: AsRef<str>>(username: U, password: P) -> Self {
+        Self {
+            username: username.as_ref().to_owned(),
+            password: password.as_ref().to_owned(),
+        }
+    }
+
+    pub fn from_credentials(credentials: impl AsRef<[u8]>) -> Result<Self, ()> {
+        use base64ct::{Base64, Encoding};
+        let credentials = std::str::from_utf8(credentials.as_ref()).map_err(|_| ())?;
+        let bytes = Base64::decode_vec(credentials).map_err(|_| ())?;
+
+        let credentials = String::from_utf8(bytes).map_err(|_| ())?;
+
+        let mut iter = credentials.splitn(2, ':');
+        let username = iter.next();
+        let password = iter.next();
+
+        let (username, password) = match (username, password) {
+            (Some(username), Some(password)) => (username.to_string(), password.to_string()),
+            (Some(_), None) => return Err(()),
+            (None, _) => return Err(()),
+        };
+
+        Ok(Self { username, password })
+    }
+
+    pub fn username(&self) -> &str {
+        self.username.as_str()
+    }
+
+    pub fn password(&self) -> &str {
+        self.password.as_str()
+    }
+}
 
 fn build_status_xml(code: &str, summary: Option<String>) -> XMLElement {
     let mut status_xml = XMLElement::new("status");
@@ -69,25 +112,26 @@ impl Display for ApiError {
 
 fn unknown_project(project: String) -> ApiError {
     ApiError {
-        http_status: StatusCode::NotFound,
+        http_status: StatusCode::NOT_FOUND,
         code: "unknown_project".to_owned(),
         summary: project,
     }
 }
 
 fn unknown_package(package: String) -> ApiError {
-    ApiError::new(StatusCode::NotFound, "unknown_package".to_owned(), package)
+    ApiError::new(StatusCode::NOT_FOUND, "unknown_package".to_owned(), package)
 }
 
 fn check_auth(auth: &BasicAuth, request: &Request) -> Result<(), ApiError> {
     let given_auth = request
         .headers
-        .get(&"authorization".into())
-        .and_then(|auth| auth.last().as_str().strip_prefix("Basic "))
+        .get(AUTHORIZATION)
+        .and_then(|auth| auth.to_str().ok())
+        .and_then(|s| s.strip_prefix("Basic "))
         .and_then(|creds| BasicAuth::from_credentials(creds.trim().as_bytes()).ok())
         .ok_or_else(|| {
             ApiError::new(
-                StatusCode::Unauthorized,
+                StatusCode::UNAUTHORIZED,
                 "authentication_required".to_owned(),
                 "Authentication required".to_owned(),
             )
@@ -97,7 +141,7 @@ fn check_auth(auth: &BasicAuth, request: &Request) -> Result<(), ApiError> {
         Ok(())
     } else {
         Err(ApiError::new(
-            StatusCode::Unauthorized,
+            StatusCode::UNAUTHORIZED,
             "authentication_required".to_owned(),
             format!(
                 "Unknown user '{}' or invalid password",

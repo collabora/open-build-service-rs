@@ -12,7 +12,7 @@ use super::*;
 
 fn unknown_repo(project: &str, repo: &str) -> ApiError {
     ApiError::new(
-        StatusCode::NotFound,
+        StatusCode::NOT_FOUND,
         "404".to_owned(),
         format!("project '{}' has no repository '{}'", project, repo),
     )
@@ -20,7 +20,7 @@ fn unknown_repo(project: &str, repo: &str) -> ApiError {
 
 fn unknown_arch(project: &str, repo: &str, arch: &str) -> ApiError {
     ApiError::new(
-        StatusCode::NotFound,
+        StatusCode::NOT_FOUND,
         "404".to_owned(),
         format!(
             "repository '{}/{}' has no architecture '{}'",
@@ -31,7 +31,7 @@ fn unknown_arch(project: &str, repo: &str, arch: &str) -> ApiError {
 
 fn unknown_parameter(param: &str) -> ApiError {
     ApiError::new(
-        StatusCode::BadRequest,
+        StatusCode::BAD_REQUEST,
         "400".to_owned(),
         format!("unknown parameter '{}'", param),
     )
@@ -61,7 +61,7 @@ impl Respond for ProjectBuildCommandResponder {
 
         let cmd = try_api!(
             find_query_param(request, "cmd").ok_or_else(|| ApiError::new(
-                StatusCode::BadRequest,
+                StatusCode::BAD_REQUEST,
                 "missing_parameter".to_string(),
                 "Missing parameter 'cmd'".to_string()
             ))
@@ -76,7 +76,7 @@ impl Respond for ProjectBuildCommandResponder {
                         "package" => package_names.push(value.clone().into_owned()),
                         "arch" | "repository" | "code" | "lastbuild" => {
                             return ApiError::new(
-                                StatusCode::MisdirectedRequest,
+                                StatusCode::MISDIRECTED_REQUEST,
                                 "unsupported".to_string(),
                                 "Operation not supported by the OBS mock server".to_owned(),
                             )
@@ -106,7 +106,7 @@ impl Respond for ProjectBuildCommandResponder {
                         inner_xml.render(&mut inner, false, true).unwrap();
 
                         return ApiError::new(
-                            StatusCode::NotFound,
+                            StatusCode::NOT_FOUND,
                             "not_found".to_owned(),
                             String::from_utf8_lossy(&inner).into_owned(),
                         )
@@ -134,10 +134,10 @@ impl Respond for ProjectBuildCommandResponder {
                     }
                 }
 
-                ResponseTemplate::new(StatusCode::Ok).set_body_xml(build_status_xml("ok", None))
+                ResponseTemplate::new(StatusCode::OK).set_body_xml(build_status_xml("ok", None))
             }
             _ => ApiError::new(
-                StatusCode::BadRequest,
+                StatusCode::BAD_REQUEST,
                 "illegal_request".to_owned(),
                 format!("unsupported POST command {} to {}", cmd, request.url),
             )
@@ -213,7 +213,7 @@ impl Respond for ArchListingResponder {
             xml.add_child(child_xml).unwrap();
         }
 
-        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+        ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
     }
 }
 
@@ -330,7 +330,7 @@ impl Respond for BuildJobHistoryResponder {
                 "code" => code_names.push(value.into_owned()),
                 "limit" if limit.is_some() => {
                     return ApiError::new(
-                        StatusCode::Ok,
+                        StatusCode::OK,
                         "400".to_owned(),
                         "parameter 'limit' set multiple times".to_owned(),
                     )
@@ -410,7 +410,7 @@ impl Respond for BuildJobHistoryResponder {
             }
         }
 
-        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+        ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
     }
 }
 
@@ -465,7 +465,7 @@ impl Respond for BuildBinaryListResponder {
             }
         }
 
-        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+        ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
     }
 }
 
@@ -513,11 +513,11 @@ impl Respond for BuildBinaryFileResponder {
         let file = try_api!(package
             .and_then(|package| package.binaries.get(file_name))
             .ok_or_else(|| ApiError::new(
-                StatusCode::NotFound,
+                StatusCode::NOT_FOUND,
                 "404".to_owned(),
                 format!("{}: No such file or directory", file_name)
             )));
-        ResponseTemplate::new(StatusCode::Ok)
+        ResponseTemplate::new(StatusCode::OK)
             .set_body_raw(file.contents.clone(), "application/octet-stream")
     }
 }
@@ -562,7 +562,7 @@ impl Respond for BuildPackageStatusResponder {
                 .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
 
         let package = arch.packages.get(package_name);
-        ResponseTemplate::new(StatusCode::Ok).set_body_xml(package.map_or_else(
+        ResponseTemplate::new(StatusCode::OK).set_body_xml(package.map_or_else(
             || {
                 package_status_xml(
                     package_name,
@@ -587,7 +587,7 @@ impl BuildLogResponder {
 fn parse_number_param(value: Cow<str>) -> Result<usize, ApiError> {
     if value.is_empty() {
         return Err(ApiError::new(
-            StatusCode::BadRequest,
+            StatusCode::BAD_REQUEST,
             "400".to_owned(),
             "number is empty".to_owned(),
         ));
@@ -595,7 +595,7 @@ fn parse_number_param(value: Cow<str>) -> Result<usize, ApiError> {
 
     value.as_ref().parse().map_err(|_| {
         ApiError::new(
-            StatusCode::BadRequest,
+            StatusCode::BAD_REQUEST,
             "400".to_owned(),
             format!("not a number: '{}'", value),
         )
@@ -607,7 +607,7 @@ fn parse_bool_param(value: Cow<str>) -> Result<bool, ApiError> {
         "1" => Ok(true),
         "0" => Ok(false),
         _ => Err(ApiError::new(
-            StatusCode::BadRequest,
+            StatusCode::BAD_REQUEST,
             "400".to_owned(),
             "not a boolean".to_owned(),
         )),
@@ -646,7 +646,7 @@ impl Respond for BuildLogResponder {
                     ensure!(
                         value == "entry",
                         ApiError::new(
-                            StatusCode::BadRequest,
+                            StatusCode::BAD_REQUEST,
                             "400".to_owned(),
                             format!("unknown view '{}'", value)
                         )
@@ -682,7 +682,7 @@ impl Respond for BuildLogResponder {
                 .get(arch)
                 .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
         let package = try_api!(arch.packages.get(package_name).ok_or_else(|| ApiError::new(
-            StatusCode::BadRequest,
+            StatusCode::BAD_REQUEST,
             "400".to_owned(),
             format!("remote error: {} no logfile", package_name)
         )));
@@ -706,13 +706,13 @@ impl Respond for BuildLogResponder {
                 xml.add_child(entry_xml).unwrap();
             }
 
-            ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+            ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
         } else {
             let contents = log.as_ref().map_or("", |log| &log.contents);
             ensure!(
                 start <= contents.len(),
                 ApiError::new(
-                    StatusCode::BadRequest,
+                    StatusCode::BAD_REQUEST,
                     "400".to_owned(),
                     format!("remote error: start out of range  {}", start)
                 )
@@ -727,7 +727,7 @@ impl Respond for BuildLogResponder {
                     .unwrap_or(end),
             );
 
-            ResponseTemplate::new(StatusCode::Ok).set_body_string(&contents[start..end])
+            ResponseTemplate::new(StatusCode::OK).set_body_string(&contents[start..end])
         }
     }
 }
@@ -791,6 +791,6 @@ impl Respond for BuildHistoryResponder {
             }
         }
 
-        ResponseTemplate::new(StatusCode::Ok).set_body_xml(xml)
+        ResponseTemplate::new(StatusCode::OK).set_body_xml(xml)
     }
 }
