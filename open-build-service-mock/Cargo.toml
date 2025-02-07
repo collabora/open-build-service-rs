@@ -11,10 +11,10 @@ license = "MIT OR Apache-2.0"
 base16ct = { version = "0.1", features = ["std"] }
 http-types = "2.12"
 md-5 = "0.10"
-quick-xml = { version = "0.22.0", features = [ "serialize" ] }
-rand = "0.8"
-serde = "1.0"
+quick-xml = { version = "0.23.1", features = [ "serialize" ] }
+rand = "0.8.5"
+serde = "1.0.125"
 strum = "0.23"
 strum_macros = "0.23"
-xml-builder = "0.5"
-wiremock = "0.5"
+xml-builder = "=0.5.3"
+wiremock = "0.5.22"

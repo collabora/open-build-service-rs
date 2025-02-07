@@ -195,7 +195,7 @@ pub enum MockRepositoryCode {
     Unpublished,
 }
 
-#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Display, EnumString, Eq, PartialEq, Hash, Default)]
 #[strum(serialize_all = "snake_case")]
 pub enum MockPackageCode {
     Unresolvable,
@@ -207,16 +207,11 @@ pub enum MockPackageCode {
     Excluded,
     Blocked,
     Locked,
+    #[default]
     Unknown,
     Scheduled,
     Building,
     Finished,
-}
-
-impl Default for MockPackageCode {
-    fn default() -> Self {
-        MockPackageCode::Unknown
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -526,32 +521,22 @@ struct MockRepository {
     jobhist: Vec<MockJobHistoryEntry>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Display, EnumString)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Display, EnumString, Default)]
 #[strum(serialize_all = "snake_case")]
 pub enum MockRebuildMode {
+    #[default]
     Transitive,
     Direct,
     Local,
 }
 
-impl Default for MockRebuildMode {
-    fn default() -> Self {
-        MockRebuildMode::Transitive
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Display, EnumString)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Display, EnumString, Default)]
 #[strum(serialize_all = "snake_case")]
 pub enum MockBlockMode {
+    #[default]
     All,
     Local,
     Never,
-}
-
-impl Default for MockBlockMode {
-    fn default() -> Self {
-        MockBlockMode::All
-    }
 }
 
 #[derive(Default)]
@@ -567,7 +552,7 @@ struct MockProject {
 
 type ProjectMap = HashMap<String, MockProject>;
 
-fn get_project<'p, 'n>(projects: &'p mut ProjectMap, name: &'n str) -> &'p mut MockProject {
+fn get_project<'p>(projects: &'p mut ProjectMap, name: &str) -> &'p mut MockProject {
     projects
         .get_mut(name)
         .unwrap_or_else(|| panic!("Unknown project: {}", name))
@@ -594,7 +579,7 @@ fn get_repo<'p, 'n>(
         .unwrap_or_else(|| panic!("Unknown arch: {}/{}", repo_name, arch))
 }
 
-fn get_package<'p, 'n>(project: &'p mut MockProject, name: &'n str) -> &'p mut MockPackage {
+fn get_package<'p>(project: &'p mut MockProject, name: &str) -> &'p mut MockPackage {
     project
         .packages
         .get_mut(name)
@@ -890,7 +875,7 @@ impl ObsMock {
         project
             .repos
             .entry(repo_name)
-            .or_insert_with(HashMap::new)
+            .or_default()
             .entry(arch)
             .and_modify(|repo| repo.code = code)
             .or_insert_with(|| MockRepository {

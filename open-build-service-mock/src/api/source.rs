@@ -96,7 +96,7 @@ impl Respond for ProjectListingResponder {
         let mut components = request.url.path_segments().unwrap();
         let project_name = components.nth_back(0).unwrap();
 
-        let projects = self.mock.projects().write().unwrap();
+        let projects = self.mock.projects().read().unwrap();
         let project = try_api!(projects
             .get(project_name)
             .ok_or_else(|| unknown_project(project_name.to_owned())));
@@ -559,7 +559,7 @@ fn do_commit(
 
     for req_entry in filelist.entries {
         let key = MockSourceFileKey::borrowed(&req_entry.name, &req_entry.md5);
-        if package.files.get(&key).is_some() {
+        if package.files.contains_key(&key) {
             entries.insert(
                 key.path.into_owned(),
                 MockEntry {

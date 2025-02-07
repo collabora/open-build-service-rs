@@ -663,7 +663,7 @@ impl<'a> PackageLog<'a> {
         u.query_pairs_mut().append_pair("view", "entry");
 
         let e: LogEntry = self.client.request(u).await?;
-        if let Some(entry) = e.entries.get(0) {
+        if let Some(entry) = e.entries.first() {
             Ok((entry.size, entry.mtime))
         } else {
             Err(Error::UnexpectedResult)
@@ -960,10 +960,10 @@ impl<'a> PackageBuilder<'a> {
         let mut reader = quick_xml::Reader::from_str(&response);
         reader.trim_text(true);
         let mut buf = Vec::new();
-        if let Event::Start(e) = reader.read_event(&mut buf).map_err(DeError::Xml)? {
+        if let Event::Start(e) = reader.read_event(&mut buf).map_err(DeError::from)? {
             let mut is_missing = false;
             for attr in e.attributes() {
-                let attr = attr.map_err(DeError::Xml)?;
+                let attr = attr.map_err(DeError::from)?;
                 if attr.key == b"error" {
                     if attr.value.as_ref() != b"missing" {
                         return Err(DeError::Custom(

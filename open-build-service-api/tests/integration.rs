@@ -212,7 +212,7 @@ async fn test_source_list() {
         TEST_PROJECT,
         TEST_PACKAGE_1,
         MockRevisionOptions {
-            time: mtime.clone(),
+            time: mtime,
             srcmd5: srcmd5.clone(),
             ..Default::default()
         },
@@ -1095,8 +1095,7 @@ async fn test_build_results() {
     let package2_arch2 = arch1_repo
         .statuses
         .iter()
-        .filter(|status| status.package == TEST_PACKAGE_2)
-        .next()
+        .find(|status| status.package == TEST_PACKAGE_2)
         .unwrap();
     assert_eq!(package2_arch2.package, TEST_PACKAGE_2);
     assert_eq!(package2_arch2.code, PackageCode::Broken);
@@ -1157,7 +1156,7 @@ async fn test_build_binaries() {
             test_file.to_owned(),
             MockBinary {
                 contents: test_contents.to_vec(),
-                mtime: test_mtime.clone(),
+                mtime: test_mtime,
             },
         )]
         .into(),
@@ -1491,7 +1490,6 @@ async fn test_build_logs() {
         .stream(PackageLogStreamOptions {
             offset: Some(4),
             end: Some(11),
-            ..PackageLogStreamOptions::default()
         })
         .unwrap();
 
