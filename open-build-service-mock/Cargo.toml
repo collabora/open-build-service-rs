@@ -15,6 +15,6 @@ quick-xml = { version = "0.23.1", features = [ "serialize" ] }
 rand = "0.8.5"
 serde = "1.0.125"
 strum = "0.23"
-strum_macros = "0.23"
+strum_macros = "0.26"
 wiremock = "0.6.2"
 base64ct = { version = "1.6.0", features = ["std"] }
