@@ -424,7 +424,7 @@ impl<'de> Deserialize<'de> for BranchStatus {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct PackageBuildMetaDisable {
     #[serde(default, rename = "@repository")]
     pub repository: Option<String>,
@@ -432,13 +432,13 @@ pub struct PackageBuildMetaDisable {
     pub arch: Option<String>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct PackageBuildMeta {
     #[serde(rename = "disable")]
     pub disabled: Vec<PackageBuildMetaDisable>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct PackageMeta {
     #[serde(rename = "@name")]
     pub name: String,
@@ -970,6 +970,29 @@ impl<'a> PackageBuilder<'a> {
             .push(&self.package)
             .push("_meta");
         self.client.request(u).await
+    }
+
+    pub async fn set_meta(&self, meta: &PackageMeta) -> Result<()> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push(&self.package)
+            .push("_meta");
+
+        let mut body = Vec::new();
+        quick_xml::se::to_writer(&mut body, meta)?;
+
+        Client::send_with_error(
+            self.client
+                .authenticated_request(Method::PUT, u)
+                .header(CONTENT_TYPE, "application/xml")
+                .body(body),
+        )
+        .await?;
+
+        Ok(())
     }
 
     pub async fn source_file(&self, file: &str) -> Result<impl Stream<Item = Result<Bytes>>> {
