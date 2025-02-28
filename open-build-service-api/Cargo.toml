@@ -19,6 +19,9 @@ bytes = "1.0.1"
 base16ct = { version = "0.1", features = ["std"] }
 md-5 = "0.10"
 strum_macros = "0.23"
+tracing = "0.1"
+xml_dom = "0.2.8"
+tokio = "1.35.0"
 
 [dev-dependencies]
 open-build-service-mock = { path = "../open-build-service-mock" }
