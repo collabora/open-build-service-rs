@@ -426,26 +426,31 @@ impl<'de> Deserialize<'de> for BranchStatus {
     }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct PackageBuildMetaDisable {
-    #[serde(default, rename = "@repository")]
+    #[serde(default, rename = "@repository", skip_serializing_if = "Option::is_none")]
     pub repository: Option<String>,
-    #[serde(default, rename = "@arch")]
+    #[serde(default, rename = "@arch", skip_serializing_if = "Option::is_none")]
     pub arch: Option<String>,
 }
 
-#[derive(Deserialize, Debug, Default)]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct PackageBuildMeta {
     #[serde(rename = "disable")]
     pub disabled: Vec<PackageBuildMetaDisable>,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename = "package")]
 pub struct PackageMeta {
     #[serde(rename = "@name")]
     pub name: String,
     #[serde(rename = "@project")]
     pub project: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
     #[serde(default)]
     pub build: PackageBuildMeta,
 }
@@ -975,6 +980,29 @@ impl<'a> PackageBuilder<'a> {
             .push(&self.package)
             .push("_meta");
         self.client.request(u).await
+    }
+
+    pub async fn set_meta(&self, meta: &PackageMeta) -> Result<()> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push(&self.package)
+            .push("_meta");
+
+        let mut body = String::new();
+        quick_xml::se::to_writer(&mut body, meta)?;
+
+        Client::send_with_error(
+            self.client
+                .authenticated_request(Method::PUT, u)
+                .header(CONTENT_TYPE, "application/xml")
+                .body(body),
+        )
+        .await?;
+
+        Ok(())
     }
 
     pub async fn source_file(&self, file: &str) -> Result<impl Stream<Item = Result<Bytes>>> {
