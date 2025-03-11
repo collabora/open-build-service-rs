@@ -44,7 +44,7 @@ async fn monitor(client: Client, opts: Package) -> Result<()> {
     let p = client.project(opts.project).package(opts.package.clone());
     let mut last: Vec<MonitorData> = Vec::new();
     loop {
-        let result = p.result().await?;
+        let result = p.result(Default::default()).await?;
         for r in result.results {
             let data = MonitorData::from_result(r, &opts.package);
 

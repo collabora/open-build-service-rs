@@ -365,8 +365,8 @@ impl<'de> Deserialize<'de> for BranchStatus {
     }
 }
 
-#[derive(Deserialize, Debug)]
-pub struct PackageBuildMetaDisable {
+#[derive(Deserialize, Debug, Default)]
+pub struct BuildTargerSpec {
     #[serde(default)]
     pub repository: Option<String>,
     #[serde(default)]
@@ -376,7 +376,7 @@ pub struct PackageBuildMetaDisable {
 #[derive(Deserialize, Debug, Default)]
 pub struct PackageBuildMeta {
     #[serde(rename = "disable")]
-    pub disabled: Vec<PackageBuildMetaDisable>,
+    pub disabled: Vec<BuildTargerSpec>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -1031,14 +1031,25 @@ impl<'a> PackageBuilder<'a> {
         self.client.post_request(u).await
     }
 
-    pub async fn result(&self) -> Result<ResultList> {
+    pub async fn result(&self, filter: BuildTargerSpec) -> Result<ResultList> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
             .map_err(|_| Error::InvalidUrl)?
             .push("build")
             .push(&self.project)
             .push("_result");
-        u.query_pairs_mut().append_pair("package", &self.package);
+
+        {
+            let mut q = u.query_pairs_mut();
+            q.append_pair("package", &self.package);
+            if let Some(repository) = &filter.repository {
+                q.append_pair("repository", repository);
+            }
+            if let Some(arch) = &filter.arch {
+                q.append_pair("arch", arch);
+            }
+        }
+
         self.client.request(u).await
     }
 }
@@ -1088,13 +1099,24 @@ impl<'a> ProjectBuilder<'a> {
         self.client.request(u).await
     }
 
-    pub async fn result(&self) -> Result<ResultList> {
+    pub async fn result(&self, filter: BuildTargerSpec) -> Result<ResultList> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
             .map_err(|_| Error::InvalidUrl)?
             .push("build")
             .push(&self.project)
             .push("_result");
+
+        {
+            let mut q = u.query_pairs_mut();
+            if let Some(repository) = &filter.repository {
+                q.append_pair("repository", repository);
+            }
+            if let Some(arch) = &filter.arch {
+                q.append_pair("arch", arch);
+            }
+        }
+
         self.client.request(u).await
     }
 

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use futures::prelude::*;
-use open_build_service_api::{Client, PackageLogStreamOptions};
+use open_build_service_api::{BuildTargerSpec, Client, PackageLogStreamOptions};
 use oscrc::Oscrc;
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
@@ -25,6 +25,10 @@ struct Package {
 struct BuildResult {
     project: String,
     package: Option<String>,
+    #[arg(long, short)]
+    repository: Option<String>,
+    #[arg(long, short)]
+    arch: Option<String>,
 }
 
 async fn jobstatus(client: Client, opts: PackageFull) -> Result<()> {
@@ -70,11 +74,15 @@ async fn list(client: Client, opts: Package) -> Result<()> {
 
 async fn result(client: Client, opts: BuildResult) -> Result<()> {
     let p = client.project(opts.project);
+    let result_options = BuildTargerSpec {
+        repository: opts.repository,
+        arch: opts.arch,
+    };
     if let Some(package) = opts.package {
         let p = p.package(package);
-        println!("{:#?}", p.result().await);
+        println!("{:#?}", p.result(result_options).await);
     } else {
-        println!("{:#?}", p.result().await);
+        println!("{:#?}", p.result(result_options).await);
     }
 
     Ok(())
