@@ -305,6 +305,12 @@ pub struct CommitOptions {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct ResultOptions {
+    pub arch: Option<String>,
+    pub repository: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct BranchOptions {
     pub target_project: Option<String>,
     pub target_package: Option<String>,
@@ -1031,14 +1037,25 @@ impl<'a> PackageBuilder<'a> {
         self.client.post_request(u).await
     }
 
-    pub async fn result(&self) -> Result<ResultList> {
+    pub async fn result(&self, options: ResultOptions) -> Result<ResultList> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
             .map_err(|_| Error::InvalidUrl)?
             .push("build")
             .push(&self.project)
             .push("_result");
-        u.query_pairs_mut().append_pair("package", &self.package);
+
+        {
+            let mut q = u.query_pairs_mut();
+            q.append_pair("package", &self.package);
+            if let Some(repository) = &options.repository {
+                q.append_pair("repository", repository);
+            }
+            if let Some(arch) = &options.arch {
+                q.append_pair("arch", arch);
+            }
+        }
+
         self.client.request(u).await
     }
 }
@@ -1088,13 +1105,24 @@ impl<'a> ProjectBuilder<'a> {
         self.client.request(u).await
     }
 
-    pub async fn result(&self) -> Result<ResultList> {
+    pub async fn result(&self, options: ResultOptions) -> Result<ResultList> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
             .map_err(|_| Error::InvalidUrl)?
             .push("build")
             .push(&self.project)
             .push("_result");
+
+        {
+            let mut q = u.query_pairs_mut();
+            if let Some(repository) = &options.repository {
+                q.append_pair("repository", repository);
+            }
+            if let Some(arch) = &options.arch {
+                q.append_pair("arch", arch);
+            }
+        }
+
         self.client.request(u).await
     }
 
