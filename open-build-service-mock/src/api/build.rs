@@ -270,9 +270,15 @@ impl Respond for BuildResultsResponder {
         let project_name = components.nth_back(1).unwrap();
 
         let mut package_filters = vec![];
+        let mut arch_filter = None;
+        let mut repository_filter = None;
         for (key, value) in request.url.query_pairs() {
-            ensure!(key == "package", unknown_parameter(&key));
-            package_filters.push(value);
+            match key.as_ref() {
+                "package" => package_filters.push(value),
+                "arch" => arch_filter = Some(value),
+                "repository" => repository_filter = Some(value),
+                _ => return unknown_parameter(&key).into_response(),
+            };
         }
 
         let projects = self.mock.projects().read().unwrap();
@@ -293,8 +299,13 @@ impl Respond for BuildResultsResponder {
             // these are computed.
             .with_attribute(("state", "3ff37f67d60b76bd0491a5243311ba81"))
             .write_inner_content(|writer| {
-                for (repo_name, arches) in &project.repos {
-                    for (arch, repo) in arches {
+                for (repo_name, arches) in project.repos.iter().filter(|(repo_name, _)| {
+                    repository_filter.as_ref().map_or(true, |f| f == *repo_name)
+                }) {
+                    for (arch, repo) in arches
+                        .iter()
+                        .filter(|(arch, _)| arch_filter.as_ref().map_or(true, |f| f == *arch))
+                    {
                         let result_xml = writer.create_element("result").with_attributes([
                             ("project", project_name),
                             ("repository", repo_name.as_str()),
