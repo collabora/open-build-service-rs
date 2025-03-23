@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use core::str;
 use futures::future::BoxFuture;
 use futures::prelude::*;
 use futures::ready;
@@ -13,7 +14,9 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use strum_macros::Display;
 use thiserror::Error;
+use tracing::warn;
 use url::Url;
+use xml_dom;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -27,6 +30,10 @@ pub enum Error {
     UnexpectedResult,
     #[error("Invalid client url")]
     InvalidUrl,
+    #[error("dom error: {0}")]
+    XmlDomParserError(#[from] xml_dom::parser::Error),
+    #[error("join error: {0}")]
+    JoinError(#[from] tokio::task::JoinError),
 }
 
 #[derive(Clone, Deserialize, Debug)]
@@ -84,6 +91,8 @@ pub struct RepositoryMeta {
 #[derive(Deserialize, Debug)]
 pub struct ProjectMeta {
     pub name: String,
+    #[serde(default)]
+    pub build: BuildTargetFilters,
     #[serde(default, rename = "repository")]
     pub repositories: Vec<RepositoryMeta>,
 }
@@ -365,26 +374,56 @@ impl<'de> Deserialize<'de> for BranchStatus {
     }
 }
 
-#[derive(Deserialize, Debug)]
-pub struct PackageBuildMetaDisable {
+// Rename this to TargetFilter??? or TargetSpec??? ()
+// https://github.com/openSUSE/open-build-service/blob/ce12bf8d21545242529f31bcd312ede80a29920e/docs/api/api/obs.rng#L172-L183
+// obs:flag-switch
+#[derive(Deserialize, Serialize, Debug, Clone, Default)]
+pub struct BuildTarget {
     #[serde(default)]
     pub repository: Option<String>,
     #[serde(default)]
     pub arch: Option<String>,
 }
 
-#[derive(Deserialize, Debug, Default)]
-pub struct PackageBuildMeta {
-    #[serde(rename = "disable")]
-    pub disabled: Vec<PackageBuildMetaDisable>,
+impl BuildTarget {
+    pub fn empty() -> Self {
+        Default::default()
+    }
+
+    pub fn repo(repository: String) -> Self {
+        Self {
+            repository: Some(repository),
+            ..Default::default()
+        }
+    }
+
+    pub fn arch(arch: String) -> Self {
+        Self {
+            arch: Some(arch),
+            ..Default::default()
+        }
+    }
 }
 
-#[derive(Deserialize, Debug)]
+// obs:flag-element
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+pub struct BuildTargetFilters {
+    #[serde(default, rename = "enable")]
+    pub enabled: Vec<BuildTarget>,
+    #[serde(default, rename = "disable")]
+    pub disabled: Vec<BuildTarget>,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct PackageMeta {
     pub name: String,
     pub project: String,
     #[serde(default)]
-    pub build: PackageBuildMeta,
+    pub build: BuildTargetFilters,
+    #[serde(default)]
+    pub publish: BuildTargetFilters,
+    #[serde(default)]
+    pub debuginfo: BuildTargetFilters,
 }
 
 #[derive(Deserialize, Debug)]
@@ -690,6 +729,109 @@ impl AsRef<str> for BuildCommand<'_> {
     }
 }
 
+// TODO: Could this be a function?
+macro_rules! ensure_child {
+    ($document:ident, $parent:ident, $tag_name:expr) => {{
+        use xml_dom::level2::*;
+        if let Some(child) = $parent
+            .child_nodes()
+            .into_iter()
+            .find(|node| node.tag_name() == $tag_name)
+        {
+            child
+        } else {
+            let child = $document.create_element($tag_name).unwrap();
+            $parent.append_child(child.clone()).unwrap();
+            child
+        }
+    }};
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PackageModifier {
+    build_disabled: Option<Vec<BuildTarget>>,
+}
+
+impl PackageModifier {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn with_build_disabled(mut self, build_disabled: Vec<BuildTarget>) -> Self {
+        self.build_disabled = Some(build_disabled);
+        self
+    }
+
+    pub async fn commit(self, project: &ProjectBuilder<'_>) -> Result<()> {
+        use xml_dom::level2::convert::*;
+        use xml_dom::level2::*;
+        let project_xml = project.meta_raw().await?;
+        //let parsed: ProjectMeta = quick_xml::de::from_str(&project_xml)?;
+        let mut changes = false;
+
+        if let Some(new_xml) = tokio::task::spawn_blocking(move || {
+            let mut target_project_meta = xml_dom::parser::read_xml(&project_xml).unwrap();
+            let document = as_document_mut(&mut target_project_meta).unwrap();
+            let mut root_node = document.document_element().unwrap();
+            let root = as_element_mut(&mut root_node).unwrap();
+
+            if let Some(build_disabled) = self.build_disabled {
+                let mut build_el = ensure_child!(document, root, "build");
+                for build_disabled in build_disabled {
+                    let mut disable_el = document.create_element("disable").unwrap();
+                    if let Some(arch) = build_disabled.arch {
+                        disable_el.set_attribute("arch", &arch).unwrap();
+                        changes = true;
+                    }
+                    if let Some(repository) = build_disabled.repository {
+                        disable_el.set_attribute("repository", &repository).unwrap();
+                        changes = true;
+                    }
+                    build_el.append_child(disable_el).unwrap();
+                }
+            }
+
+            /*
+            if let Some(disabled_repos) = self.disabled_repos {
+                let mut build_el = if let Some(build_el) = root
+                    .child_nodes()
+                    .into_iter()
+                    .find(|node| node.tag_name() == "build")
+                {
+                    build_el
+                } else {
+                    let build_el = document.create_element("build").unwrap();
+                    root.append_child(build_el.clone()).unwrap();
+                    build_el
+                };
+                for disabled_repo in disabled_repos {
+                    let mut disable_el = document.create_element("disable").unwrap();
+                    disable_el
+                        .set_attribute("repository", &disabled_repo)
+                        .unwrap();
+                    build_el.append_child(disable_el).unwrap();
+                }
+            }
+
+            if let Some(disabled_arches) = self.disabled_arches {
+
+            }*/
+
+            if changes {
+                Some(target_project_meta.to_string())
+            } else {
+                None
+            }
+        })
+        .await?
+        {
+            project.set_meta_raw(new_xml).await?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PackageBuilder<'a> {
     pub client: &'a Client,
@@ -875,6 +1017,18 @@ impl<'a> PackageBuilder<'a> {
         self.client.request(u).await
     }
 
+    pub async fn meta_dom(&self) -> Result<xml_dom::level2::RefNode> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push(&self.package)
+            .push("_meta");
+        self.client.request_dom(u).await
+        //xml_dom::parser::read_reader(v)?
+    }
+
     pub async fn meta(&self) -> Result<PackageMeta> {
         let mut u = self.client.base.clone();
         u.path_segments_mut()
@@ -884,6 +1038,32 @@ impl<'a> PackageBuilder<'a> {
             .push(&self.package)
             .push("_meta");
         self.client.request(u).await
+    }
+
+    pub async fn set_meta_dom(&self, meta: &xml_dom::level2::RefNode) -> Result<()> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push(&self.package)
+            .push("_meta");
+
+        //let mut body = String::new();
+        //quick_xml::se::to_writer(&mut body, meta)?;
+        let body = meta.to_string();
+
+        warn!("package xml {}", body);
+        println!("package xml {}", body);
+        Client::send_with_error(
+            self.client
+                .authenticated_request(Method::PUT, u)
+                .header(CONTENT_TYPE, "application/xml")
+                .body(body),
+        )
+        .await?;
+
+        Ok(())
     }
 
     pub async fn source_file(&self, file: &str) -> Result<impl Stream<Item = Result<Bytes>>> {
@@ -994,38 +1174,38 @@ impl<'a> PackageBuilder<'a> {
             .push("source")
             .push(&self.project)
             .push(&self.package);
-        u.query_pairs_mut().append_pair("cmd", "branch");
 
-        if let Some(target_project) = &options.target_project {
-            u.query_pairs_mut()
-                .append_pair("target_project", target_project);
-        }
+        {
+            let mut q = u.query_pairs_mut();
+            q.append_pair("cmd", "branch");
 
-        if let Some(target_package) = &options.target_package {
-            u.query_pairs_mut()
-                .append_pair("target_package", target_package);
-        }
+            if let Some(target_project) = &options.target_project {
+                q.append_pair("target_project", target_project);
+            }
 
-        if let Some(comment) = &options.comment {
-            u.query_pairs_mut().append_pair("comment", comment);
-        }
+            if let Some(target_package) = &options.target_package {
+                q.append_pair("target_package", target_package);
+            }
 
-        if let Some(rebuild) = &options.add_repositories_rebuild {
-            u.query_pairs_mut()
-                .append_pair("add_repositories_rebuild", &rebuild.to_string());
-        }
+            if let Some(comment) = &options.comment {
+                q.append_pair("comment", comment);
+            }
 
-        if let Some(block) = &options.add_repositories_block {
-            u.query_pairs_mut()
-                .append_pair("add_repositories_block", &block.to_string());
-        }
+            if let Some(rebuild) = &options.add_repositories_rebuild {
+                q.append_pair("add_repositories_rebuild", &rebuild.to_string());
+            }
 
-        if options.force {
-            u.query_pairs_mut().append_pair("force", "1");
-        }
+            if let Some(block) = &options.add_repositories_block {
+                q.append_pair("add_repositories_block", &block.to_string());
+            }
 
-        if options.missingok {
-            u.query_pairs_mut().append_pair("missingok", "1");
+            if options.force {
+                q.append_pair("force", "1");
+            }
+
+            if options.missingok {
+                q.append_pair("missingok", "1");
+            }
         }
 
         self.client.post_request(u).await
@@ -1086,6 +1266,51 @@ impl<'a> ProjectBuilder<'a> {
             .push(&self.project)
             .push("_meta");
         self.client.request(u).await
+    }
+
+    pub async fn meta_dom(&self) -> Result<xml_dom::level2::RefNode> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push("_meta");
+        self.client.request_dom(u).await
+        //xml_dom::parser::read_reader(v)?
+    }
+    pub async fn meta_raw(&self) -> Result<String> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push("_meta");
+        self.client.request_raw(u).await
+        //xml_dom::parser::read_reader(v)?
+    }
+
+    pub async fn set_meta_raw(&self, meta: String) -> Result<()> {
+        let mut u = self.client.base.clone();
+        u.path_segments_mut()
+            .map_err(|_| Error::InvalidUrl)?
+            .push("source")
+            .push(&self.project)
+            .push("_meta");
+
+        //let body = meta.to_string();
+        let body = meta;
+
+        warn!("project xml {}", body);
+        println!("project xml {}", body);
+        Client::send_with_error(
+            self.client
+                .authenticated_request(Method::PUT, u)
+                .header(CONTENT_TYPE, "application/xml")
+                .body(body),
+        )
+        .await?;
+
+        Ok(())
     }
 
     pub async fn result(&self) -> Result<ResultList> {
@@ -1246,6 +1471,22 @@ impl Client {
         }
     }
 
+    async fn request_dom(&self, url: Url) -> Result<xml_dom::level2::RefNode> {
+        let data = Self::send_with_error(self.authenticated_request(Method::GET, url))
+            .await?
+            .text()
+            .await?;
+        xml_dom::parser::read_xml(&data).map_err(|e| e.into())
+    }
+    async fn request_raw(&self, url: Url) -> Result<String> {
+        Ok(
+            Self::send_with_error(self.authenticated_request(Method::GET, url))
+                .await?
+                .text()
+                .await?
+                .to_string(),
+        )
+    }
     async fn request<T: DeserializeOwned + std::fmt::Debug>(&self, url: Url) -> Result<T> {
         let data = Self::send_with_error(self.authenticated_request(Method::GET, url))
             .await?
