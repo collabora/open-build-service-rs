@@ -1046,7 +1046,7 @@ async fn test_build_results() {
         .project(TEST_PROJECT.to_owned())
         .package(TEST_PACKAGE_2.to_owned());
 
-    let results = project.result().await.unwrap();
+    let results = project.result(Default::default()).await.unwrap();
     let (arch1_repo, arch2_repo) = get_results_by_arch(results);
 
     assert_eq!(arch1_repo.project, TEST_PROJECT);
@@ -1070,7 +1070,23 @@ async fn test_build_results() {
     assert_eq!(package2_status.details.as_ref().unwrap(), details);
     assert!(package2_status.dirty);
 
-    let results = package_2.result().await.unwrap();
+    // Test project filter
+    let results = project
+        .result(BuildTargerSpec {
+            repository: Some(TEST_REPO.to_owned()),
+            arch: Some(TEST_ARCH_1.to_owned()),
+        })
+        .await
+        .unwrap();
+
+    let arch1_repo = &results.results[0];
+    assert_eq!(arch1_repo.project, TEST_PROJECT);
+    assert_eq!(arch1_repo.repository, TEST_REPO);
+    assert_eq!(arch1_repo.arch, TEST_ARCH_1);
+    assert_eq!(arch1_repo.code, RepositoryCode::Building);
+    assert_eq!(results.results.len(), 1);
+
+    let results = package_2.result(Default::default()).await.unwrap();
     let (arch1_repo, arch2_repo) = get_results_by_arch(results);
 
     assert_eq!(arch1_repo.statuses.len(), 0);
@@ -1089,7 +1105,7 @@ async fn test_build_results() {
         MockBuildStatus::new(MockPackageCode::Broken),
     );
 
-    let results = project.result().await.unwrap();
+    let results = project.result(Default::default()).await.unwrap();
     let (arch1_repo, _) = get_results_by_arch(results);
 
     let package2_arch2 = arch1_repo
@@ -1100,7 +1116,7 @@ async fn test_build_results() {
     assert_eq!(package2_arch2.package, TEST_PACKAGE_2);
     assert_eq!(package2_arch2.code, PackageCode::Broken);
 
-    let results = package_2.result().await.unwrap();
+    let results = package_2.result(Default::default()).await.unwrap();
     let (arch1_repo, arch2_repo) = get_results_by_arch(results);
 
     assert_eq!(arch1_repo.statuses.len(), 1);
@@ -1108,6 +1124,22 @@ async fn test_build_results() {
 
     assert_eq!(arch1_repo.statuses[0].package, TEST_PACKAGE_2);
     assert_eq!(arch2_repo.statuses[0].package, TEST_PACKAGE_2);
+
+    // Test package filter
+    let results = package_2
+        .result(BuildTargerSpec {
+            repository: Some(TEST_REPO.to_owned()),
+            arch: Some(TEST_ARCH_2.to_owned()),
+        })
+        .await
+        .unwrap();
+
+    let arch2_repo = &results.results[0];
+    assert_eq!(arch2_repo.project, TEST_PROJECT);
+    assert_eq!(arch2_repo.repository, TEST_REPO);
+    assert_eq!(arch2_repo.code, RepositoryCode::Broken);
+    assert_eq!(arch2_repo.statuses.len(), 1);
+    assert_eq!(results.results.len(), 1);
 }
 
 #[tokio::test]
