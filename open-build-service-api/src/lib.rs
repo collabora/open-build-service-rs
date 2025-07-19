@@ -577,7 +577,7 @@ impl<'a> PackageLogStream<'a> {
         let mut url = self.url.clone();
         url.query_pairs_mut()
             .append_pair("nostream", "1")
-            .append_pair("start", &format!("{}", offset));
+            .append_pair("start", &format!("{offset}"));
         if let Some(end) = self.options.end {
             url.query_pairs_mut().append_pair("end", &end.to_string());
         }

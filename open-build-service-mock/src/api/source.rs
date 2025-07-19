@@ -20,7 +20,7 @@ fn source_file_not_found(name: &str) -> ApiError {
     ApiError::new(
         StatusCode::NOT_FOUND,
         "404".to_owned(),
-        format!("{}: no such file", name),
+        format!("{name}: no such file"),
     )
 }
 
@@ -361,7 +361,7 @@ impl Respond for PackageSourceListingResponder {
             let index: usize = try_api!(rev_arg.parse().map_err(|_| ApiError::new(
                 StatusCode::BAD_REQUEST,
                 "400".to_owned(),
-                format!("bad revision '{}'", rev_arg)
+                format!("bad revision '{rev_arg}'")
             )));
             ensure!(
                 index <= package.revisions.len() && (index > 0 || !list_meta),
@@ -737,8 +737,7 @@ fn do_branch(
                 StatusCode::BAD_REQUEST,
                 "not_missing".to_owned(),
                 format!(
-                    "Branch call with missingok parameter but branched source ({}/{}) exists.",
-                    origin_project_name, origin_package_name
+                    "Branch call with missingok parameter but branched source ({origin_project_name}/{origin_package_name}) exists."
                 ),
             )
             .into_response();
@@ -784,8 +783,7 @@ fn do_branch(
             StatusCode::BAD_REQUEST,
             "double_branch_package".to_owned(),
             format!(
-                "branch target package already exists: {}/{}",
-                target_project_name, target_package_name
+                "branch target package already exists: {target_project_name}/{target_package_name}"
             )
         )
     );

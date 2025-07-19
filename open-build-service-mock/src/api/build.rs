@@ -13,7 +13,7 @@ fn unknown_repo(project: &str, repo: &str) -> ApiError {
     ApiError::new(
         StatusCode::NOT_FOUND,
         "404".to_owned(),
-        format!("project '{}' has no repository '{}'", project, repo),
+        format!("project '{project}' has no repository '{repo}'"),
     )
 }
 
@@ -21,10 +21,7 @@ fn unknown_arch(project: &str, repo: &str, arch: &str) -> ApiError {
     ApiError::new(
         StatusCode::NOT_FOUND,
         "404".to_owned(),
-        format!(
-            "repository '{}/{}' has no architecture '{}'",
-            project, repo, arch
-        ),
+        format!("repository '{project}/{repo}' has no architecture '{arch}'"),
     )
 }
 
@@ -32,7 +29,7 @@ fn unknown_parameter(param: &str) -> ApiError {
     ApiError::new(
         StatusCode::BAD_REQUEST,
         "400".to_owned(),
-        format!("unknown parameter '{}'", param),
+        format!("unknown parameter '{param}'"),
     )
 }
 
@@ -50,8 +47,8 @@ impl Respond for ProjectBuildCommandResponder {
     fn respond(&self, request: &Request) -> ResponseTemplate {
         try_api!(check_auth(self.mock.auth(), request));
 
-        let components = request.url.path_segments().unwrap();
-        let project_name = components.last().unwrap();
+        let mut components = request.url.path_segments().unwrap();
+        let project_name = components.next_back().unwrap();
 
         let mut projects = self.mock.projects().write().unwrap();
         let project = try_api!(
@@ -161,8 +158,8 @@ impl Respond for RepoListingResponder {
     fn respond(&self, request: &Request) -> ResponseTemplate {
         try_api!(check_auth(self.mock.auth(), request));
 
-        let components = request.url.path_segments().unwrap();
-        let project_name = components.last().unwrap();
+        let mut components = request.url.path_segments().unwrap();
+        let project_name = components.next_back().unwrap();
 
         let projects = self.mock.projects().read().unwrap();
         let project = try_api!(
@@ -593,7 +590,7 @@ impl Respond for BuildBinaryFileResponder {
                 .ok_or_else(|| ApiError::new(
                     StatusCode::NOT_FOUND,
                     "404".to_owned(),
-                    format!("{}: No such file or directory", file_name)
+                    format!("{file_name}: No such file or directory")
                 ))
         );
         ResponseTemplate::new(StatusCode::OK)
@@ -689,7 +686,7 @@ fn parse_number_param(value: Cow<str>) -> Result<usize, ApiError> {
         ApiError::new(
             StatusCode::BAD_REQUEST,
             "400".to_owned(),
-            format!("not a number: '{}'", value),
+            format!("not a number: '{value}'"),
         )
     })
 }
@@ -740,7 +737,7 @@ impl Respond for BuildLogResponder {
                         ApiError::new(
                             StatusCode::BAD_REQUEST,
                             "400".to_owned(),
-                            format!("unknown view '{}'", value)
+                            format!("unknown view '{value}'")
                         )
                     );
                     entry_view = true;
@@ -781,7 +778,7 @@ impl Respond for BuildLogResponder {
         let package = try_api!(arch.packages.get(package_name).ok_or_else(|| ApiError::new(
             StatusCode::BAD_REQUEST,
             "400".to_owned(),
-            format!("remote error: {} no logfile", package_name)
+            format!("remote error: {package_name} no logfile")
         )));
 
         let log = if last_successful {
@@ -818,7 +815,7 @@ impl Respond for BuildLogResponder {
                 ApiError::new(
                     StatusCode::BAD_REQUEST,
                     "400".to_owned(),
-                    format!("remote error: start out of range  {}", start)
+                    format!("remote error: start out of range  {start}")
                 )
             );
 
