@@ -1,6 +1,6 @@
 use std::{borrow::Cow, fmt::Display, time::SystemTime};
 
-use http::{header::AUTHORIZATION, StatusCode};
+use http::{StatusCode, header::AUTHORIZATION};
 use wiremock::{Request, ResponseTemplate};
 
 mod build;

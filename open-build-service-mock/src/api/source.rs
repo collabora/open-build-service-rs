@@ -5,13 +5,13 @@ use std::time::SystemTime;
 
 use http::StatusCode;
 use quick_xml::events::BytesText;
-use serde::{de::DeserializeOwned, Deserialize};
+use serde::{Deserialize, de::DeserializeOwned};
 use wiremock::ResponseTemplate;
 use wiremock::{Request, Respond};
 
 use crate::{
-    random_md5, MockBranchOptions, MockEntry, MockPackage, MockPackageOptions, MockProject,
-    MockRevision, MockRevisionOptions, MockSourceFile, MockSourceFileKey, ObsMock, ZERO_REV_SRCMD5,
+    MockBranchOptions, MockEntry, MockPackage, MockPackageOptions, MockProject, MockRevision,
+    MockRevisionOptions, MockSourceFile, MockSourceFileKey, ObsMock, ZERO_REV_SRCMD5, random_md5,
 };
 
 use super::*;
@@ -106,9 +106,11 @@ impl Respond for ProjectListingResponder {
         let project_name = components.nth_back(0).unwrap();
 
         let projects = self.mock.projects().read().unwrap();
-        let project = try_api!(projects
-            .get(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
 
         let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
         xml.create_element("directory")
@@ -171,9 +173,11 @@ impl Respond for ProjectMetaResponder {
         let project_name = components.nth_back(1).unwrap();
 
         let projects = self.mock.projects().read().unwrap();
-        let project = try_api!(projects
-            .get(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
 
         let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
         xml.create_element("project")
@@ -231,14 +235,18 @@ impl Respond for PackageSourceHistoryResponder {
         let project_name = components.nth_back(0).unwrap();
 
         let projects = self.mock.projects().read().unwrap();
-        let project = try_api!(projects
-            .get(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
 
-        let package = try_api!(project
-            .packages
-            .get(package_name)
-            .ok_or_else(|| unknown_package(package_name.to_owned())));
+        let package = try_api!(
+            project
+                .packages
+                .get(package_name)
+                .ok_or_else(|| unknown_package(package_name.to_owned()))
+        );
 
         let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
         xml.create_element("revisionlist")
@@ -317,14 +325,18 @@ impl Respond for PackageSourceListingResponder {
         let project_name = components.nth_back(0).unwrap();
 
         let projects = self.mock.projects().read().unwrap();
-        let project = try_api!(projects
-            .get(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
 
-        let package = try_api!(project
-            .packages
-            .get(package_name)
-            .ok_or_else(|| unknown_package(package_name.to_owned())));
+        let package = try_api!(
+            project
+                .packages
+                .get(package_name)
+                .ok_or_else(|| unknown_package(package_name.to_owned()))
+        );
 
         let list_meta = match find_query_param(request, "meta").as_deref() {
             Some("1") => true,
@@ -335,7 +347,7 @@ impl Respond for PackageSourceListingResponder {
                     "400".to_owned(),
                     "not boolean".to_owned(),
                 )
-                .into_response()
+                .into_response();
             }
         };
 
@@ -407,14 +419,18 @@ impl Respond for PackageSourceFileResponder {
         let project_name = components.nth_back(0).unwrap();
 
         let projects = self.mock.projects().read().unwrap();
-        let project = try_api!(projects
-            .get(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
 
-        let package = try_api!(project
-            .packages
-            .get(package_name)
-            .ok_or_else(|| unknown_package(package_name.to_owned())));
+        let package = try_api!(
+            project
+                .packages
+                .get(package_name)
+                .ok_or_else(|| unknown_package(package_name.to_owned()))
+        );
 
         if file_name == "_meta" {
             let entry = package
@@ -435,10 +451,11 @@ impl Respond for PackageSourceFileResponder {
         } else {
             match package.revisions.last() {
                 Some(rev) => {
-                    let entry = try_api!(rev
-                        .entries
-                        .get(file_name)
-                        .ok_or_else(|| source_file_not_found(file_name)));
+                    let entry = try_api!(
+                        rev.entries
+                            .get(file_name)
+                            .ok_or_else(|| source_file_not_found(file_name))
+                    );
                     let contents = package
                         .files
                         .get(&MockSourceFileKey::borrowed(file_name, &entry.md5))
@@ -486,9 +503,11 @@ impl Respond for PackageSourcePlacementResponder {
         let rev = find_query_param(request, "rev");
 
         let mut projects = self.mock.projects().write().unwrap();
-        let project = try_api!(projects
-            .get_mut(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get_mut(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
 
         if file_name == "_meta" {
             // TODO: parse file, return errors if attributes don't match (the
@@ -514,10 +533,12 @@ impl Respond for PackageSourcePlacementResponder {
             ResponseTemplate::new(StatusCode::OK)
                 .set_body_xml(build_status_xml("ok", Some("Ok".to_owned()), |_| Ok(())).unwrap())
         } else {
-            let package = try_api!(project
-                .packages
-                .get_mut(package_name)
-                .ok_or_else(|| unknown_package(package_name.to_owned())));
+            let package = try_api!(
+                project
+                    .packages
+                    .get_mut(package_name)
+                    .ok_or_else(|| unknown_package(package_name.to_owned()))
+            );
 
             if matches!(rev.as_ref().map(AsRef::as_ref), Some("repository")) {
                 let file = MockSourceFile {
@@ -569,14 +590,18 @@ fn do_commit(
     mock: &ObsMock,
     projects: &mut HashMap<String, MockProject>,
 ) -> ResponseTemplate {
-    let project = try_api!(projects
-        .get_mut(project_name)
-        .ok_or_else(|| unknown_project(project_name.to_owned())));
+    let project = try_api!(
+        projects
+            .get_mut(project_name)
+            .ok_or_else(|| unknown_project(project_name.to_owned()))
+    );
 
-    let package = try_api!(project
-        .packages
-        .get_mut(package_name)
-        .ok_or_else(|| unknown_package(package_name.to_owned())));
+    let package = try_api!(
+        project
+            .packages
+            .get_mut(package_name)
+            .ok_or_else(|| unknown_package(package_name.to_owned()))
+    );
 
     let time = SystemTime::now();
 
@@ -846,9 +871,11 @@ impl Respond for PackageSourceDeleteResponder {
         let project_name = components.nth_back(0).unwrap();
 
         let mut projects = self.mock.projects().write().unwrap();
-        let project = try_api!(projects
-            .get_mut(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get_mut(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
 
         ensure!(
             project.packages.remove(package_name).is_some(),

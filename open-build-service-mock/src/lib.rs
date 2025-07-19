@@ -17,9 +17,9 @@ use api::{
 use md5::{Digest, Md5};
 use strum_macros::{Display, EnumString};
 use wiremock::{
+    Mock, MockServer,
     http::Url,
     matchers::{method, path_regex},
-    Mock, MockServer,
 };
 
 mod api;
@@ -363,9 +363,10 @@ impl MockPackage {
         *vrev += 1;
 
         for (path, entry) in &entries {
-            assert!(self
-                .files
-                .contains_key(&MockSourceFileKey::borrowed(path, &entry.md5)));
+            assert!(
+                self.files
+                    .contains_key(&MockSourceFileKey::borrowed(path, &entry.md5))
+            );
         }
 
         self.revisions.push(MockRevision {

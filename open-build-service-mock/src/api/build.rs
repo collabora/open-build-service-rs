@@ -54,9 +54,11 @@ impl Respond for ProjectBuildCommandResponder {
         let project_name = components.last().unwrap();
 
         let mut projects = self.mock.projects().write().unwrap();
-        let project = try_api!(projects
-            .get_mut(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get_mut(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
 
         let cmd = try_api!(
             find_query_param(request, "cmd").ok_or_else(|| ApiError::new(
@@ -163,9 +165,11 @@ impl Respond for RepoListingResponder {
         let project_name = components.last().unwrap();
 
         let projects = self.mock.projects().read().unwrap();
-        let project = try_api!(projects
-            .get(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
 
         let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
         xml.create_element("directory")
@@ -203,13 +207,17 @@ impl Respond for ArchListingResponder {
         let project_name = components.nth_back(0).unwrap();
 
         let projects = self.mock.projects().read().unwrap();
-        let project = try_api!(projects
-            .get(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
-        let arches = try_api!(project
-            .repos
-            .get(repo_name)
-            .ok_or_else(|| unknown_repo(project_name, repo_name)));
+        let project = try_api!(
+            projects
+                .get(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
+        let arches = try_api!(
+            project
+                .repos
+                .get(repo_name)
+                .ok_or_else(|| unknown_repo(project_name, repo_name))
+        );
 
         let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
         xml.create_element("directory")
@@ -276,9 +284,11 @@ impl Respond for BuildResultsResponder {
         }
 
         let projects = self.mock.projects().read().unwrap();
-        let project = try_api!(projects
-            .get(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
 
         for package_name in &package_filters {
             ensure!(
@@ -371,7 +381,7 @@ impl Respond for BuildJobHistoryResponder {
                         "400".to_owned(),
                         "parameter 'limit' set multiple times".to_owned(),
                     )
-                    .into_response()
+                    .into_response();
                 }
                 "limit" => limit = Some(try_api!(parse_number_param(value))),
                 _ => return unknown_parameter(&key).into_response(),
@@ -385,18 +395,23 @@ impl Respond for BuildJobHistoryResponder {
 
         let projects = self.mock.projects().read().unwrap();
 
-        let project = try_api!(projects
-            .get(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
 
-        let arches = try_api!(project
-            .repos
-            .get(repo_name)
-            .ok_or_else(|| unknown_repo(project_name, repo_name)));
-        let arch =
-            try_api!(arches
-                .get(arch)
-                .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
+        let arches = try_api!(
+            project
+                .repos
+                .get(repo_name)
+                .ok_or_else(|| unknown_repo(project_name, repo_name))
+        );
+        let arch = try_api!(arches.get(arch).ok_or_else(|| unknown_arch(
+            project_name,
+            repo_name,
+            arch
+        )));
 
         let mut codes = HashSet::new();
         for code_name in code_names {
@@ -481,22 +496,27 @@ impl Respond for BuildBinaryListResponder {
 
         let projects = self.mock.projects().read().unwrap();
 
-        let project = try_api!(projects
-            .get(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
         ensure!(
             project.packages.contains_key(package_name),
             unknown_package(package_name.to_owned())
         );
 
-        let arches = try_api!(project
-            .repos
-            .get(repo_name)
-            .ok_or_else(|| unknown_repo(project_name, repo_name)));
-        let arch =
-            try_api!(arches
-                .get(arch)
-                .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
+        let arches = try_api!(
+            project
+                .repos
+                .get(repo_name)
+                .ok_or_else(|| unknown_repo(project_name, repo_name))
+        );
+        let arch = try_api!(arches.get(arch).ok_or_else(|| unknown_arch(
+            project_name,
+            repo_name,
+            arch
+        )));
 
         let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
         xml.create_element("binarylist")
@@ -544,31 +564,38 @@ impl Respond for BuildBinaryFileResponder {
 
         let projects = self.mock.projects().read().unwrap();
 
-        let project = try_api!(projects
-            .get(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
         ensure!(
             project.packages.contains_key(package_name),
             unknown_package(package_name.to_owned())
         );
 
-        let arches = try_api!(project
-            .repos
-            .get(repo_name)
-            .ok_or_else(|| unknown_repo(project_name, repo_name)));
-        let arch =
-            try_api!(arches
-                .get(arch)
-                .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
+        let arches = try_api!(
+            project
+                .repos
+                .get(repo_name)
+                .ok_or_else(|| unknown_repo(project_name, repo_name))
+        );
+        let arch = try_api!(arches.get(arch).ok_or_else(|| unknown_arch(
+            project_name,
+            repo_name,
+            arch
+        )));
         let package = arch.packages.get(package_name);
 
-        let file = try_api!(package
-            .and_then(|package| package.binaries.get(file_name))
-            .ok_or_else(|| ApiError::new(
-                StatusCode::NOT_FOUND,
-                "404".to_owned(),
-                format!("{}: No such file or directory", file_name)
-            )));
+        let file = try_api!(
+            package
+                .and_then(|package| package.binaries.get(file_name))
+                .ok_or_else(|| ApiError::new(
+                    StatusCode::NOT_FOUND,
+                    "404".to_owned(),
+                    format!("{}: No such file or directory", file_name)
+                ))
+        );
         ResponseTemplate::new(StatusCode::OK)
             .set_body_raw(file.contents.clone(), "application/octet-stream")
     }
@@ -596,22 +623,27 @@ impl Respond for BuildPackageStatusResponder {
 
         let projects = self.mock.projects().read().unwrap();
 
-        let project = try_api!(projects
-            .get(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
         ensure!(
             project.packages.contains_key(package_name),
             unknown_package(package_name.to_owned())
         );
 
-        let arches = try_api!(project
-            .repos
-            .get(repo_name)
-            .ok_or_else(|| unknown_repo(project_name, repo_name)));
-        let arch =
-            try_api!(arches
-                .get(arch)
-                .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
+        let arches = try_api!(
+            project
+                .repos
+                .get(repo_name)
+                .ok_or_else(|| unknown_repo(project_name, repo_name))
+        );
+        let arch = try_api!(arches.get(arch).ok_or_else(|| unknown_arch(
+            project_name,
+            repo_name,
+            arch
+        )));
 
         let package = arch.packages.get(package_name);
         ResponseTemplate::new(StatusCode::OK).set_body_xml(package.map_or_else(
@@ -725,22 +757,27 @@ impl Respond for BuildLogResponder {
 
         let projects = self.mock.projects().read().unwrap();
 
-        let project = try_api!(projects
-            .get(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
         ensure!(
             project.packages.contains_key(package_name),
             unknown_package(package_name.to_owned())
         );
 
-        let arches = try_api!(project
-            .repos
-            .get(repo_name)
-            .ok_or_else(|| unknown_repo(project_name, repo_name)));
-        let arch =
-            try_api!(arches
-                .get(arch)
-                .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
+        let arches = try_api!(
+            project
+                .repos
+                .get(repo_name)
+                .ok_or_else(|| unknown_repo(project_name, repo_name))
+        );
+        let arch = try_api!(arches.get(arch).ok_or_else(|| unknown_arch(
+            project_name,
+            repo_name,
+            arch
+        )));
         let package = try_api!(arch.packages.get(package_name).ok_or_else(|| ApiError::new(
             StatusCode::BAD_REQUEST,
             "400".to_owned(),
@@ -825,22 +862,27 @@ impl Respond for BuildHistoryResponder {
 
         let projects = self.mock.projects().read().unwrap();
 
-        let project = try_api!(projects
-            .get(project_name)
-            .ok_or_else(|| unknown_project(project_name.to_owned())));
+        let project = try_api!(
+            projects
+                .get(project_name)
+                .ok_or_else(|| unknown_project(project_name.to_owned()))
+        );
         ensure!(
             project.packages.contains_key(package_name),
             unknown_package(package_name.to_owned())
         );
 
-        let arches = try_api!(project
-            .repos
-            .get(repo_name)
-            .ok_or_else(|| unknown_repo(project_name, repo_name)));
-        let arch =
-            try_api!(arches
-                .get(arch)
-                .ok_or_else(|| unknown_arch(project_name, repo_name, arch)));
+        let arches = try_api!(
+            project
+                .repos
+                .get(repo_name)
+                .ok_or_else(|| unknown_repo(project_name, repo_name))
+        );
+        let arch = try_api!(arches.get(arch).ok_or_else(|| unknown_arch(
+            project_name,
+            repo_name,
+            arch
+        )));
 
         let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 8);
         xml.create_element("buildhistory")
