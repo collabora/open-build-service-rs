@@ -205,7 +205,7 @@ async fn test_source_list() {
 
     assert_eq!(meta_dir.name, TEST_PACKAGE_1);
     assert_eq!(meta_dir.rev.unwrap(), "1");
-    assert!(meta_dir.vrev.is_none());
+    assert_eq!(meta_dir.vrev, None, "unexpected vrev");
     let mtime = SystemTime::UNIX_EPOCH + Duration::from_secs(10);
     let srcmd5 = random_md5();
     mock.add_package_revision(
@@ -416,7 +416,7 @@ async fn test_source_get() {
 async fn test_commits() {
     let test_file = "test";
     let test_contents = b"some file contents here";
-    let test_entry = CommitEntry::from_contents(test_file.to_owned(), test_contents);
+    let test_entry = CommitFileEntry::from_contents(test_file.to_owned(), test_contents);
 
     let file_list = CommitFileList::new().entry(test_entry.clone());
 

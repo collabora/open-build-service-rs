@@ -4,6 +4,8 @@ use futures::prelude::*;
 use futures::ready;
 use futures::stream::BoxStream;
 use md5::{Digest, Md5};
+use quick_xml::SeError;
+use quick_xml::name::QName;
 use quick_xml::{de::DeError, events::Event};
 use reqwest::{Body, Method, RequestBuilder, Response, header::CONTENT_TYPE};
 use serde::de::IntoDeserializer;
@@ -21,6 +23,8 @@ pub enum Error {
     RequestError(#[from] reqwest::Error),
     #[error("Request deserialization failed: {0}")]
     DeError(#[from] DeError),
+    #[error("Request serialization failed: {0}")]
+    SeError(#[from] SeError),
     #[error("{0}")]
     ApiError(ApiError),
     #[error("Unexpected result")]
@@ -37,6 +41,7 @@ pub struct ApiErrorSummary {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct ApiError {
+    #[serde(rename = "@code")]
     pub code: String,
     pub summary: ApiErrorSummary,
 }
@@ -71,10 +76,11 @@ pub enum BlockMode {
 
 #[derive(Deserialize, Debug)]
 pub struct RepositoryMeta {
+    #[serde(rename = "@name")]
     pub name: String,
-    #[serde(default)]
+    #[serde(default, rename = "@rebuild")]
     pub rebuild: RebuildMode,
-    #[serde(default)]
+    #[serde(default, rename = "@block")]
     pub block: BlockMode,
 
     #[serde(default, rename = "arch")]
@@ -83,6 +89,7 @@ pub struct RepositoryMeta {
 
 #[derive(Deserialize, Debug)]
 pub struct ProjectMeta {
+    #[serde(rename = "@name")]
     pub name: String,
     #[serde(default, rename = "repository")]
     pub repositories: Vec<RepositoryMeta>,
@@ -158,20 +165,28 @@ pub struct JobStatus {
 
 #[derive(Deserialize, Debug)]
 pub struct BuildStatus {
+    #[serde(rename = "@package")]
     pub package: String,
+    #[serde(rename = "@code")]
     pub code: PackageCode,
-    #[serde(default)]
+    #[serde(default, rename = "@dirty")]
     pub dirty: bool,
     pub details: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct BuildHistoryEntry {
+    #[serde(rename = "@rev")]
     pub rev: String,
+    #[serde(rename = "@srcmd5")]
     pub srcmd5: String,
+    #[serde(rename = "@versrel")]
     pub versrel: String,
+    #[serde(rename = "@bcnt")]
     pub bcnt: String,
+    #[serde(rename = "@time")]
     pub time: String,
+    #[serde(rename = "@duration")]
     pub duration: String,
 }
 
@@ -183,32 +198,58 @@ pub struct BuildHistory {
 
 #[derive(Deserialize, Debug)]
 pub struct LinkInfo {
+    #[serde(rename = "@project")]
     pub project: String,
+    #[serde(rename = "@package")]
     pub package: String,
+    #[serde(rename = "@srcmd5")]
     pub srcmd5: String,
+    #[serde(rename = "@xsrcmd5")]
     pub xsrcmd5: String,
+    #[serde(rename = "@lsrcmd5")]
     pub lsrcmd5: String,
-    #[serde(default)]
+    #[serde(default, rename = "@missingok")]
     pub missingok: bool,
 }
 
 #[derive(Deserialize, Debug)]
 pub struct SourceDirectoryEntry {
+    #[serde(rename = "@name")]
     pub name: String,
+    #[serde(rename = "@size")]
     pub size: u64,
+    #[serde(rename = "@md5")]
     pub md5: String,
+    #[serde(rename = "@mtime")]
     pub mtime: u64,
+    #[serde(rename = "@originproject")]
     pub originproject: Option<String>,
     //available ?
     //recommended ?
+    #[serde(rename = "@hash")]
     pub hash: Option<String>,
+}
+
+fn empty_string_is_none<'de, D>(de: D) -> std::result::Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let s = Option::deserialize(de)?;
+    match s.as_deref() {
+        Some("") => Ok(None),
+        _ => Ok(s),
+    }
 }
 
 #[derive(Deserialize, Debug)]
 pub struct SourceDirectory {
+    #[serde(rename = "@name")]
     pub name: String,
+    #[serde(rename = "@rev")]
     pub rev: Option<String>,
+    #[serde(default, rename = "@vrev", deserialize_with = "empty_string_is_none")]
     pub vrev: Option<String>,
+    #[serde(rename = "@srcmd5")]
     pub srcmd5: String,
     #[serde(default, rename = "entry")]
     pub entries: Vec<SourceDirectoryEntry>,
@@ -218,7 +259,9 @@ pub struct SourceDirectory {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct Revision {
+    #[serde(rename = "@rev")]
     pub rev: String,
+    #[serde(rename = "@vrev")]
     pub vrev: String,
     pub srcmd5: String,
     pub version: String,
@@ -235,14 +278,16 @@ pub struct RevisionList {
 
 #[derive(Clone, Deserialize, Serialize, Debug)]
 pub struct CommitEntry {
+    #[serde(rename = "@name")]
     pub name: String,
+    #[serde(rename = "@md5")]
     pub md5: String,
 }
 
 impl CommitEntry {
-    pub fn from_contents<T: AsRef<[u8]>>(name: String, contents: T) -> CommitEntry {
+    pub fn from_contents<T: AsRef<[u8]>>(name: String, contents: T) -> Self {
         let md5 = base16ct::lower::encode_string(&Md5::digest(&contents));
-        CommitEntry { name, md5 }
+        Self { name, md5 }
     }
 }
 
@@ -259,11 +304,24 @@ pub enum CommitResult {
     MissingEntries(MissingEntries),
 }
 
+#[derive(Clone, Deserialize, Serialize, Debug)]
+pub struct CommitFileEntry {
+    pub name: String,
+    pub md5: String,
+}
+
+impl CommitFileEntry {
+    pub fn from_contents<T: AsRef<[u8]>>(name: String, contents: T) -> Self {
+        let md5 = base16ct::lower::encode_string(&Md5::digest(&contents));
+        Self { name, md5 }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename = "directory")]
 pub struct CommitFileList {
     #[serde(rename = "entry")]
-    entries: Vec<CommitEntry>,
+    entries: Vec<CommitFileEntry>,
 }
 
 impl CommitFileList {
@@ -271,19 +329,19 @@ impl CommitFileList {
         CommitFileList::default()
     }
 
-    pub fn add_entry(&mut self, entry: CommitEntry) {
+    pub fn add_entry(&mut self, entry: CommitFileEntry) {
         self.entries.push(entry);
     }
 
     pub fn add_file_md5(&mut self, name: String, md5: String) {
-        self.add_entry(CommitEntry { name, md5 });
+        self.add_entry(CommitFileEntry { name, md5 });
     }
 
     pub fn add_file_from_contents(&mut self, name: String, contents: &[u8]) {
-        self.add_entry(CommitEntry::from_contents(name, contents));
+        self.add_entry(CommitFileEntry::from_contents(name, contents));
     }
 
-    pub fn entry(mut self, entry: CommitEntry) -> Self {
+    pub fn entry(mut self, entry: CommitFileEntry) -> Self {
         self.add_entry(entry);
         self
     }
@@ -331,6 +389,7 @@ impl<'de> Deserialize<'de> for BranchStatus {
     {
         #[derive(Deserialize)]
         struct BranchStatusDataItem {
+            #[serde(rename = "@name")]
             name: String,
             #[serde(rename = "$value")]
             value: String,
@@ -367,9 +426,9 @@ impl<'de> Deserialize<'de> for BranchStatus {
 
 #[derive(Deserialize, Debug)]
 pub struct PackageBuildMetaDisable {
-    #[serde(default)]
+    #[serde(default, rename = "@repository")]
     pub repository: Option<String>,
-    #[serde(default)]
+    #[serde(default, rename = "@arch")]
     pub arch: Option<String>,
 }
 
@@ -381,7 +440,9 @@ pub struct PackageBuildMeta {
 
 #[derive(Deserialize, Debug)]
 pub struct PackageMeta {
+    #[serde(rename = "@name")]
     pub name: String,
+    #[serde(rename = "@project")]
     pub project: String,
     #[serde(default)]
     pub build: PackageBuildMeta,
@@ -389,11 +450,15 @@ pub struct PackageMeta {
 
 #[derive(Deserialize, Debug)]
 pub struct ResultListResult {
+    #[serde(rename = "@project")]
     pub project: String,
+    #[serde(rename = "@repository")]
     pub repository: String,
+    #[serde(rename = "@arch")]
     pub arch: String,
+    #[serde(rename = "@code")]
     pub code: RepositoryCode,
-    #[serde(default)]
+    #[serde(default, rename = "@dirty")]
     pub dirty: bool,
     #[serde(default, rename = "status")]
     pub statuses: Vec<BuildStatus>,
@@ -407,6 +472,7 @@ impl ResultListResult {
 
 #[derive(Deserialize, Debug)]
 pub struct ResultList {
+    #[serde(rename = "@state")]
     pub state: String,
     #[serde(rename = "result")]
     pub results: Vec<ResultListResult>,
@@ -414,8 +480,11 @@ pub struct ResultList {
 
 #[derive(Clone, Deserialize, Debug)]
 pub struct Binary {
+    #[serde(rename = "@filename")]
     pub filename: String,
+    #[serde(rename = "@size")]
     pub size: u64,
+    #[serde(rename = "@mtime")]
     pub mtime: u64,
 }
 
@@ -427,6 +496,7 @@ pub struct BinaryList {
 
 #[derive(Deserialize, Debug)]
 pub struct DirectoryEntry {
+    #[serde(rename = "@name")]
     pub name: String,
 }
 
@@ -508,19 +578,33 @@ impl JobHistoryFilters {
 
 #[derive(Deserialize, Debug)]
 pub struct JobHist {
+    #[serde(rename = "@package")]
     pub package: String,
+    #[serde(rename = "@rev")]
     pub rev: String,
+    #[serde(rename = "@srcmd5")]
     pub srcmd5: String,
+    #[serde(rename = "@versrel")]
     pub versrel: String,
+    #[serde(rename = "@bcnt")]
     pub bcnt: String,
+    #[serde(rename = "@readytime")]
     pub readytime: u64,
+    #[serde(rename = "@starttime")]
     pub starttime: u64,
+    #[serde(rename = "@endtime")]
     pub endtime: u64,
+    #[serde(rename = "@code")]
     pub code: PackageCode,
+    #[serde(rename = "@uri")]
     pub uri: String,
+    #[serde(rename = "@workerid")]
     pub workerid: String,
+    #[serde(rename = "@hostarch")]
     pub hostarch: String,
+    #[serde(rename = "@reason")]
     pub reason: String,
+    #[serde(rename = "@verifymd5")]
     pub verifymd5: String,
 }
 
@@ -532,7 +616,9 @@ pub struct JobHistList {
 
 #[derive(Deserialize, Debug)]
 struct LogEntryEntry {
+    #[serde(rename = "@size")]
     size: usize,
+    #[serde(rename = "@mtime")]
     mtime: u64,
 }
 
@@ -931,7 +1017,7 @@ impl<'a> PackageBuilder<'a> {
             u.query_pairs_mut().append_pair("comment", comment);
         }
 
-        let mut body = Vec::new();
+        let mut body = String::new();
         quick_xml::se::to_writer(&mut body, filelist)?;
 
         let response = Client::send_with_error(
@@ -958,13 +1044,12 @@ impl<'a> PackageBuilder<'a> {
         // "Deserialize".
 
         let mut reader = quick_xml::Reader::from_str(&response);
-        reader.trim_text(true);
-        let mut buf = Vec::new();
-        if let Event::Start(e) = reader.read_event(&mut buf).map_err(DeError::from)? {
+        reader.config_mut().trim_text(true);
+        if let Event::Start(e) = reader.read_event().map_err(DeError::from)? {
             let mut is_missing = false;
             for attr in e.attributes() {
                 let attr = attr.map_err(DeError::from)?;
-                if attr.key == b"error" {
+                if attr.key == QName(b"error") {
                     if attr.value.as_ref() != b"missing" {
                         return Err(DeError::Custom(
                             "only supported value for 'error' is 'missing'".to_owned(),
@@ -983,7 +1068,7 @@ impl<'a> PackageBuilder<'a> {
                 CommitResult::Success(quick_xml::de::from_str(&response)?)
             })
         } else {
-            Err(DeError::Start.into())
+            Err(DeError::UnexpectedStart(response.into()).into())
         }
     }
 
