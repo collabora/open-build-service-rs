@@ -5,9 +5,9 @@ use futures::ready;
 use futures::stream::BoxStream;
 use md5::{Digest, Md5};
 use quick_xml::{de::DeError, events::Event};
-use reqwest::{header::CONTENT_TYPE, Body, Method, RequestBuilder, Response};
+use reqwest::{Body, Method, RequestBuilder, Response, header::CONTENT_TYPE};
 use serde::de::IntoDeserializer;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -577,7 +577,7 @@ impl<'a> PackageLogStream<'a> {
         let mut url = self.url.clone();
         url.query_pairs_mut()
             .append_pair("nostream", "1")
-            .append_pair("start", &format!("{}", offset));
+            .append_pair("start", &format!("{offset}"));
         if let Some(end) = self.options.end {
             url.query_pairs_mut().append_pair("end", &end.to_string());
         }

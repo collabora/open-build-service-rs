@@ -17,9 +17,9 @@ use api::{
 use md5::{Digest, Md5};
 use strum_macros::{Display, EnumString};
 use wiremock::{
+    Mock, MockServer,
     http::Url,
     matchers::{method, path_regex},
-    Mock, MockServer,
 };
 
 mod api;
@@ -363,9 +363,10 @@ impl MockPackage {
         *vrev += 1;
 
         for (path, entry) in &entries {
-            assert!(self
-                .files
-                .contains_key(&MockSourceFileKey::borrowed(path, &entry.md5)));
+            assert!(
+                self.files
+                    .contains_key(&MockSourceFileKey::borrowed(path, &entry.md5))
+            );
         }
 
         self.revisions.push(MockRevision {
@@ -558,14 +559,13 @@ type ProjectMap = HashMap<String, MockProject>;
 fn get_project<'p>(projects: &'p mut ProjectMap, name: &str) -> &'p mut MockProject {
     projects
         .get_mut(name)
-        .unwrap_or_else(|| panic!("Unknown project: {}", name))
+        .unwrap_or_else(|| panic!("Unknown project: {name}"))
 }
 
 fn ensure_source_package_exists(project: &mut MockProject, package_name: &str) {
     assert!(
         project.packages.contains_key(package_name),
-        "Unknown package: {}",
-        package_name
+        "Unknown package: {package_name}"
     );
 }
 
@@ -577,16 +577,16 @@ fn get_repo<'p, 'n>(
     project
         .repos
         .get_mut(repo_name)
-        .unwrap_or_else(|| panic!("Unknown repo: {}", repo_name))
+        .unwrap_or_else(|| panic!("Unknown repo: {repo_name}"))
         .get_mut(arch)
-        .unwrap_or_else(|| panic!("Unknown arch: {}/{}", repo_name, arch))
+        .unwrap_or_else(|| panic!("Unknown arch: {repo_name}/{arch}"))
 }
 
 fn get_package<'p>(project: &'p mut MockProject, name: &str) -> &'p mut MockPackage {
     project
         .packages
         .get_mut(name)
-        .unwrap_or_else(|| panic!("Unknown package: {}", name))
+        .unwrap_or_else(|| panic!("Unknown package: {name}"))
 }
 
 struct Inner {
@@ -785,7 +785,7 @@ impl ObsMock {
         let mut projects = self.inner.projects.write().unwrap();
         let project = projects
             .get_mut(project_name)
-            .unwrap_or_else(|| panic!("Unknown project: {}", project_name));
+            .unwrap_or_else(|| panic!("Unknown project: {project_name}"));
         let package = get_package(project, package_name);
 
         let meta = MockSourceFile::new_metadata(project_name, package_name, &options.disabled);
@@ -817,7 +817,7 @@ impl ObsMock {
         let mut projects = self.inner.projects.write().unwrap();
         let project = projects
             .get_mut(project_name)
-            .unwrap_or_else(|| panic!("Unknown project: {}", project_name));
+            .unwrap_or_else(|| panic!("Unknown project: {project_name}"));
         let package = get_package(project, package_name);
 
         let (key, contents) = file.into_key_and_contents();

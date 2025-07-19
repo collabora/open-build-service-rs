@@ -50,7 +50,7 @@ async fn log(client: Client, opts: PackageFull) -> Result<()> {
     let log = p.log(&opts.repository, &opts.arch);
 
     let (size, mtime) = log.entry().await?;
-    println!("Log: size: {}, mtime: {}", size, mtime);
+    println!("Log: size: {size}, mtime: {mtime}");
 
     let mut stdout = tokio::io::stdout();
 

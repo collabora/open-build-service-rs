@@ -440,7 +440,7 @@ async fn test_commits() {
         assert_eq!(missing.entries[0].name, test_entry.name);
         assert_eq!(missing.entries[0].md5, test_entry.md5);
     } else {
-        panic!("Expected missing entries, got {:?}", commit_result);
+        panic!("Expected missing entries, got {commit_result:?}");
     }
 
     package_1
@@ -462,7 +462,7 @@ async fn test_commits() {
         assert_eq!(directory.entries[0].name, test_entry.name);
         assert_eq!(directory.entries[0].md5, test_entry.md5);
     } else {
-        panic!("Expected missing entries, got {:?}", commit_result);
+        panic!("Expected missing entries, got {commit_result:?}");
     }
 
     let directory = package_1.list(None).await.unwrap();
@@ -482,8 +482,8 @@ async fn test_branch() {
     let test_file = "test";
     let test_contents = b"some file contents here";
 
-    let test_project_branched_1 = format!("home:{}:branches:{}", DEFAULT_USERNAME, TEST_PROJECT);
-    let test_project_branched_2 = format!("{}:branch", TEST_PROJECT);
+    let test_project_branched_1 = format!("home:{DEFAULT_USERNAME}:branches:{TEST_PROJECT}");
+    let test_project_branched_2 = format!("{TEST_PROJECT}:branch");
 
     let mock = start_mock().await;
     mock.add_project(TEST_PROJECT.to_owned());
