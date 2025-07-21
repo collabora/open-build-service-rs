@@ -205,7 +205,7 @@ impl Respond for ProjectMetaResponder {
                         for arch in arches.keys() {
                             writer
                                 .create_element("arch")
-                                .write_text_content(BytesText::from_plain(arch.as_bytes()))?;
+                                .write_text_content(BytesText::new(arch))?;
                         }
                         Ok(())
                     })?;
@@ -263,37 +263,32 @@ impl Respond for PackageSourceHistoryResponder {
                             ("vrev", vrev.to_string().as_str()),
                         ])
                         .write_inner_content(|writer| {
-                            writer.create_element("srcmd5").write_text_content(
-                                BytesText::from_plain(revision.options.srcmd5.as_bytes()),
-                            )?;
+                            writer
+                                .create_element("srcmd5")
+                                .write_text_content(BytesText::new(&revision.options.srcmd5))?;
 
-                            writer.create_element("version").write_text_content(
-                                BytesText::from_plain(
-                                    revision
-                                        .options
-                                        .version
-                                        .clone()
-                                        .unwrap_or_else(|| "unknown".to_owned())
-                                        .as_bytes(),
-                                ),
-                            )?;
+                            writer
+                                .create_element("version")
+                                .write_text_content(BytesText::new(
+                                    revision.options.version.as_deref().unwrap_or("unknown"),
+                                ))?;
 
-                            writer.create_element("time").write_text_content(
-                                BytesText::from_plain(
+                            writer
+                                .create_element("time")
+                                .write_text_content(BytesText::new(
                                     seconds_since_epoch(&revision.options.time)
                                         .to_string()
-                                        .as_bytes(),
-                                ),
-                            )?;
+                                        .as_str(),
+                                ))?;
 
-                            writer.create_element("user").write_text_content(
-                                BytesText::from_plain(revision.options.user.as_bytes()),
-                            )?;
+                            writer
+                                .create_element("user")
+                                .write_text_content(BytesText::new(&revision.options.user))?;
 
                             if let Some(comment) = &revision.options.comment {
-                                writer.create_element("comment").write_text_content(
-                                    BytesText::from_plain(comment.as_bytes()),
-                                )?;
+                                writer
+                                    .create_element("comment")
+                                    .write_text_content(BytesText::new(comment))?;
                             }
                             Ok(())
                         })?;
@@ -554,7 +549,7 @@ impl Respond for PackageSourcePlacementResponder {
                     .write_inner_content(|writer| {
                         writer
                             .create_element("srcmd5")
-                            .write_text_content(BytesText::from_plain(random_md5().as_bytes()))?;
+                            .write_text_content(BytesText::new(&random_md5()))?;
                         Ok(())
                     })
                     .unwrap();
@@ -667,7 +662,7 @@ fn do_commit(
 fn branch_data_xml(xml: &mut XMLWriter, name: &str, value: &str) -> quick_xml::Result<()> {
     xml.create_element("data")
         .with_attribute(("name", name))
-        .write_text_content(BytesText::from_plain(value.as_bytes()))?;
+        .write_text_content(BytesText::new(value))?;
     Ok(())
 }
 

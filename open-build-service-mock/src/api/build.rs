@@ -260,7 +260,7 @@ fn package_status_xml(
     status_xml.write_inner_content(|writer| {
         writer
             .create_element("details")
-            .write_text_content(BytesText::from_plain_str(status.details.as_str()))?;
+            .write_text_content(BytesText::new(status.details.as_str()))?;
         Ok(())
     })?;
 
