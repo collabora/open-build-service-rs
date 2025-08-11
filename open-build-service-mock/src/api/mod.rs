@@ -57,7 +57,7 @@ impl BasicAuth {
 fn build_status_xml(
     code: &str,
     summary: Option<String>,
-    closure: impl Fn(&mut XMLWriter) -> quick_xml::Result<()>,
+    closure: impl Fn(&mut XMLWriter) -> std::io::Result<()>,
 ) -> quick_xml::Result<XMLWriter> {
     use quick_xml::events::BytesText;
 
@@ -70,7 +70,7 @@ fn build_status_xml(
             if let Some(summary) = &summary {
                 writer
                     .create_element("summary")
-                    .write_text_content(BytesText::from_plain_str(summary.as_str()))?;
+                    .write_text_content(BytesText::new(summary.as_str()))?;
             }
             closure(writer)
         })?;
