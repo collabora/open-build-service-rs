@@ -51,7 +51,9 @@ jobs:
         with:
           toolchain: "1.86"
           components: clippy
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - uses: clechasseur/rs-clippy-check@v4.0.5
+        with:
+          args: --all-targets --all-features -- -D warnings
 
   clippy-latest:
     name: cargo clippy latest
@@ -62,7 +64,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - uses: clechasseur/rs-clippy-check@v4.0.5
+        with:
+          args: --all-targets --all-features
 
   minimal-dependencies:
     name: minimal direct dependencies
