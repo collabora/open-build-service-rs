@@ -858,7 +858,7 @@ impl<'a> PackageBuilder<'a> {
         repository: &str,
         arch: &str,
         file: &str,
-    ) -> Result<impl Stream<Item = Result<Bytes>>> {
+    ) -> Result<impl Stream<Item = Result<Bytes>> + use<>> {
         let u = self.full_request(repository, arch, Some(BuildCommand::DownloadBinary(file)))?;
         Ok(
             Client::send_with_error(self.client.authenticated_request(Method::GET, u))
