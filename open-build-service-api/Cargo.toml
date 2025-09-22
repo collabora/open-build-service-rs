@@ -18,7 +18,7 @@ futures = "0.3.14"
 bytes = "1.10"
 base16ct = { version = "0.2", features = ["std"] }
 md-5 = "0.10"
-strum_macros = "0.23"
+strum_macros = "0.27"
 
 [dev-dependencies]
 open-build-service-mock = { path = "../open-build-service-mock" }
