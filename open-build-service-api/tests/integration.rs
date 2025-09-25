@@ -297,8 +297,11 @@ async fn test_source_list() {
     assert_eq!(dir.rev.unwrap(), "1");
     assert_eq!(dir.vrev.unwrap(), "1");
     assert_eq!(dir.srcmd5, branch_srcmd5);
-    assert_eq!(dir.entries.len(), 1);
+    assert_eq!(dir.entries.len(), 2);
     assert_eq!(dir.linkinfo.len(), 1);
+
+    assert!(dir.entries.iter().any(|e| e.name == "_link"));
+    assert!(dir.entries.iter().any(|e| e.name == "test"));
 
     let linkinfo = &dir.linkinfo[0];
     assert_eq!(linkinfo.project, TEST_PROJECT);

@@ -65,6 +65,7 @@ pub struct MockSourceFile {
 }
 
 impl MockSourceFile {
+    const LINK_PATH: &'static str = "_link";
     const META_PATH: &'static str = "_meta";
 
     pub fn new_metadata(
@@ -107,6 +108,31 @@ impl MockSourceFile {
 
         MockSourceFile {
             path: MockSourceFile::META_PATH.to_owned(),
+            contents: xml.into_inner().into_inner(),
+        }
+    }
+
+    pub fn new_link(project: &str, baserev: &str, missingok: bool) -> MockSourceFile {
+        let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 2);
+        xml.create_element("link")
+            .with_attributes([
+                ("project", project),
+                ("baserev", baserev),
+                ("missingok", &missingok.to_string()),
+            ])
+            .write_inner_content(|writer| {
+                writer
+                    .create_element("patches")
+                    .write_inner_content(|writer| {
+                        writer.create_element("branch").write_empty()?;
+                        Ok(())
+                    })?;
+                Ok(())
+            })
+            .unwrap();
+
+        MockSourceFile {
+            path: MockSourceFile::LINK_PATH.to_owned(),
             contents: xml.into_inner().into_inner(),
         }
     }
@@ -287,7 +313,7 @@ impl MockPackage {
         branched_package_name: &str,
         options: MockBranchOptions,
     ) -> MockPackage {
-        let (mut files, entries, origin_srcmd5, disabled) = if let Some((origin, origin_rev)) =
+        let (mut files, mut entries, origin_srcmd5, disabled) = if let Some((origin, origin_rev)) =
             origin.and_then(|origin| origin.revisions.last().map(|rev| (origin, rev)))
         {
             (
@@ -310,6 +336,13 @@ impl MockPackage {
                 .into_key_and_contents();
         let meta_entry = MockEntry::from_key(&meta_key, options.time);
         files.insert(meta_key, meta_contents);
+
+        let (link_key, link_contents) =
+            MockSourceFile::new_link(branched_project_name, &origin_srcmd5, options.missingok)
+                .into_key_and_contents();
+        let link_entry = MockEntry::from_key(&link_key, options.time);
+        files.insert(link_key, link_contents);
+        entries.insert(MockSourceFile::LINK_PATH.to_owned(), link_entry);
 
         let linkinfo = MockLinkInfo {
             project: origin_project_name,
@@ -372,11 +405,14 @@ impl MockPackage {
         self.revisions.push(MockRevision {
             vrev: Some(*vrev),
             options,
+            linkinfo: if entries.contains_key(MockSourceFile::LINK_PATH) {
+                self.revisions
+                    .last()
+                    .map_or_else(Vec::new, |rev| rev.linkinfo.clone())
+            } else {
+                vec![]
+            },
             entries,
-            linkinfo: self
-                .revisions
-                .last()
-                .map_or_else(Vec::new, |rev| rev.linkinfo.clone()),
         });
     }
 }
