@@ -159,7 +159,7 @@ struct MockLinkInfo {
     baserev: String,
     srcmd5: String,
     lsrcmd5: String,
-    xsrcmd5: String,
+    link_resolution: MockLinkResolution,
     missingok: bool,
 }
 
@@ -349,7 +349,7 @@ impl MockPackage {
             package: origin_package_name,
             baserev: origin_srcmd5.clone(),
             srcmd5: origin_srcmd5,
-            xsrcmd5: options.xsrcmd5,
+            link_resolution: options.link_resolution,
             lsrcmd5: options.srcmd5.clone(),
             missingok: options.missingok,
         };
@@ -417,9 +417,15 @@ impl MockPackage {
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum MockLinkResolution {
+    Available { xsrcmd5: String },
+    Error { error: String },
+}
+
 pub struct MockBranchOptions {
     pub srcmd5: String,
-    pub xsrcmd5: String,
+    pub link_resolution: MockLinkResolution,
     pub user: String,
     pub time: SystemTime,
     pub comment: Option<String>,
@@ -430,7 +436,9 @@ impl Default for MockBranchOptions {
     fn default() -> Self {
         Self {
             srcmd5: random_md5(),
-            xsrcmd5: random_md5(),
+            link_resolution: MockLinkResolution::Available {
+                xsrcmd5: random_md5(),
+            },
             time: SystemTime::now(),
             user: ADMIN_USER.to_owned(),
             comment: None,

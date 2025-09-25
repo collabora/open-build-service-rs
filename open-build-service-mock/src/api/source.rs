@@ -10,8 +10,9 @@ use wiremock::ResponseTemplate;
 use wiremock::{Request, Respond};
 
 use crate::{
-    MockBranchOptions, MockEntry, MockPackage, MockPackageOptions, MockProject, MockRevision,
-    MockRevisionOptions, MockSourceFile, MockSourceFileKey, ObsMock, ZERO_REV_SRCMD5, random_md5,
+    MockBranchOptions, MockEntry, MockLinkResolution, MockPackage, MockPackageOptions, MockProject,
+    MockRevision, MockRevisionOptions, MockSourceFile, MockSourceFileKey, ObsMock, ZERO_REV_SRCMD5,
+    random_md5,
 };
 
 use super::*;
@@ -48,10 +49,20 @@ fn source_listing_xml(
                     ("project", linkinfo.project.as_str()),
                     ("package", &linkinfo.package),
                     ("baserev", &linkinfo.baserev),
-                    ("srcmd5", &linkinfo.srcmd5),
-                    ("xsrcmd5", &linkinfo.xsrcmd5),
-                    ("lsrcmd5", &linkinfo.lsrcmd5),
                 ]);
+
+                match &linkinfo.link_resolution {
+                    MockLinkResolution::Available { xsrcmd5 } => {
+                        linkinfo_xml = linkinfo_xml.with_attributes([
+                            ("srcmd5", linkinfo.srcmd5.as_str()),
+                            ("lsrcmd5", &linkinfo.lsrcmd5),
+                            ("xsrcmd5", xsrcmd5),
+                        ]);
+                    }
+                    MockLinkResolution::Error { error } => {
+                        linkinfo_xml = linkinfo_xml.with_attribute(("error", error.as_str()));
+                    }
+                }
 
                 if linkinfo.missingok {
                     linkinfo_xml = linkinfo_xml.with_attribute(("missingok", "1"));
@@ -752,7 +763,9 @@ fn do_branch(
         &target_package_name,
         MockBranchOptions {
             srcmd5: random_md5(),
-            xsrcmd5: random_md5(),
+            link_resolution: MockLinkResolution::Available {
+                xsrcmd5: random_md5(),
+            },
             user: mock.auth().username().to_owned(),
             time: SystemTime::now(),
             comment: comment.map(Cow::into_owned),
