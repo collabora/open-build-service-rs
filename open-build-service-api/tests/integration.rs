@@ -287,7 +287,9 @@ async fn test_source_list() {
         TEST_PACKAGE_2.to_owned(),
         MockBranchOptions {
             srcmd5: branch_srcmd5.clone(),
-            xsrcmd5: branch_xsrcmd5.clone(),
+            link_resolution: MockLinkResolution::Available {
+                xsrcmd5: branch_xsrcmd5.clone(),
+            },
             ..Default::default()
         },
     );
@@ -297,15 +299,51 @@ async fn test_source_list() {
     assert_eq!(dir.rev.unwrap(), "1");
     assert_eq!(dir.vrev.unwrap(), "1");
     assert_eq!(dir.srcmd5, branch_srcmd5);
-    assert_eq!(dir.entries.len(), 1);
+    assert_eq!(dir.entries.len(), 2);
     assert_eq!(dir.linkinfo.len(), 1);
+
+    assert!(dir.entries.iter().any(|e| e.name == "_link"));
+    assert!(dir.entries.iter().any(|e| e.name == "test"));
 
     let linkinfo = &dir.linkinfo[0];
     assert_eq!(linkinfo.project, TEST_PROJECT);
     assert_eq!(linkinfo.package, TEST_PACKAGE_1);
-    assert_eq!(linkinfo.srcmd5, srcmd5);
-    assert_eq!(linkinfo.lsrcmd5, branch_srcmd5);
-    assert_eq!(linkinfo.xsrcmd5, branch_xsrcmd5);
+    assert_eq!(linkinfo.srcmd5.as_ref().unwrap(), &srcmd5);
+    assert_eq!(linkinfo.lsrcmd5.as_ref().unwrap(), &branch_srcmd5);
+    assert_eq!(linkinfo.xsrcmd5.as_ref().unwrap(), &branch_xsrcmd5);
+
+    mock.branch(
+        TEST_PROJECT.to_owned(),
+        TEST_PACKAGE_1.to_owned(),
+        TEST_PROJECT,
+        TEST_PACKAGE_2.to_owned(),
+        MockBranchOptions {
+            srcmd5: branch_srcmd5.clone(),
+            link_resolution: MockLinkResolution::Error {
+                error: "an error".to_owned(),
+            },
+            ..Default::default()
+        },
+    );
+
+    let dir = package_2.list(None).await.unwrap();
+
+    assert_eq!(dir.rev.unwrap(), "1");
+    assert_eq!(dir.vrev.unwrap(), "1");
+    assert_eq!(dir.srcmd5, branch_srcmd5);
+    assert_eq!(dir.entries.len(), 2);
+    assert_eq!(dir.linkinfo.len(), 1);
+
+    assert!(dir.entries.iter().any(|e| e.name == "_link"));
+    assert!(dir.entries.iter().any(|e| e.name == "test"));
+
+    let linkinfo = &dir.linkinfo[0];
+    assert_eq!(linkinfo.project, TEST_PROJECT);
+    assert_eq!(linkinfo.package, TEST_PACKAGE_1);
+    assert_eq!(linkinfo.srcmd5, None);
+    assert_eq!(linkinfo.lsrcmd5, None);
+    assert_eq!(linkinfo.xsrcmd5, None);
+    assert_eq!(linkinfo.error.as_ref().unwrap(), "an error");
 }
 
 #[tokio::test]

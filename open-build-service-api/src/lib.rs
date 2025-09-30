@@ -202,14 +202,16 @@ pub struct LinkInfo {
     pub project: String,
     #[serde(rename = "@package")]
     pub package: String,
-    #[serde(rename = "@srcmd5")]
-    pub srcmd5: String,
-    #[serde(rename = "@xsrcmd5")]
-    pub xsrcmd5: String,
-    #[serde(rename = "@lsrcmd5")]
-    pub lsrcmd5: String,
+    #[serde(default, rename = "@srcmd5")]
+    pub srcmd5: Option<String>,
+    #[serde(default, rename = "@xsrcmd5")]
+    pub xsrcmd5: Option<String>,
+    #[serde(default, rename = "@lsrcmd5")]
+    pub lsrcmd5: Option<String>,
     #[serde(default, rename = "@missingok")]
     pub missingok: bool,
+    #[serde(default, rename = "@error")]
+    pub error: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]

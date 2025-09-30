@@ -65,6 +65,7 @@ pub struct MockSourceFile {
 }
 
 impl MockSourceFile {
+    const LINK_PATH: &'static str = "_link";
     const META_PATH: &'static str = "_meta";
 
     pub fn new_metadata(
@@ -111,6 +112,31 @@ impl MockSourceFile {
         }
     }
 
+    pub fn new_link(project: &str, baserev: &str, missingok: bool) -> MockSourceFile {
+        let mut xml = XMLWriter::new_with_indent(Default::default(), b' ', 2);
+        xml.create_element("link")
+            .with_attributes([
+                ("project", project),
+                ("baserev", baserev),
+                ("missingok", &missingok.to_string()),
+            ])
+            .write_inner_content(|writer| {
+                writer
+                    .create_element("patches")
+                    .write_inner_content(|writer| {
+                        writer.create_element("branch").write_empty()?;
+                        Ok(())
+                    })?;
+                Ok(())
+            })
+            .unwrap();
+
+        MockSourceFile {
+            path: MockSourceFile::LINK_PATH.to_owned(),
+            contents: xml.into_inner().into_inner(),
+        }
+    }
+
     fn md5(&self) -> String {
         base16ct::lower::encode_string(&Md5::digest(&self.contents))
     }
@@ -133,7 +159,7 @@ struct MockLinkInfo {
     baserev: String,
     srcmd5: String,
     lsrcmd5: String,
-    xsrcmd5: String,
+    link_resolution: MockLinkResolution,
     missingok: bool,
 }
 
@@ -287,7 +313,7 @@ impl MockPackage {
         branched_package_name: &str,
         options: MockBranchOptions,
     ) -> MockPackage {
-        let (mut files, entries, origin_srcmd5, disabled) = if let Some((origin, origin_rev)) =
+        let (mut files, mut entries, origin_srcmd5, disabled) = if let Some((origin, origin_rev)) =
             origin.and_then(|origin| origin.revisions.last().map(|rev| (origin, rev)))
         {
             (
@@ -311,12 +337,19 @@ impl MockPackage {
         let meta_entry = MockEntry::from_key(&meta_key, options.time);
         files.insert(meta_key, meta_contents);
 
+        let (link_key, link_contents) =
+            MockSourceFile::new_link(branched_project_name, &origin_srcmd5, options.missingok)
+                .into_key_and_contents();
+        let link_entry = MockEntry::from_key(&link_key, options.time);
+        files.insert(link_key, link_contents);
+        entries.insert(MockSourceFile::LINK_PATH.to_owned(), link_entry);
+
         let linkinfo = MockLinkInfo {
             project: origin_project_name,
             package: origin_package_name,
             baserev: origin_srcmd5.clone(),
             srcmd5: origin_srcmd5,
-            xsrcmd5: options.xsrcmd5,
+            link_resolution: options.link_resolution,
             lsrcmd5: options.srcmd5.clone(),
             missingok: options.missingok,
         };
@@ -372,18 +405,27 @@ impl MockPackage {
         self.revisions.push(MockRevision {
             vrev: Some(*vrev),
             options,
+            linkinfo: if entries.contains_key(MockSourceFile::LINK_PATH) {
+                self.revisions
+                    .last()
+                    .map_or_else(Vec::new, |rev| rev.linkinfo.clone())
+            } else {
+                vec![]
+            },
             entries,
-            linkinfo: self
-                .revisions
-                .last()
-                .map_or_else(Vec::new, |rev| rev.linkinfo.clone()),
         });
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum MockLinkResolution {
+    Available { xsrcmd5: String },
+    Error { error: String },
+}
+
 pub struct MockBranchOptions {
     pub srcmd5: String,
-    pub xsrcmd5: String,
+    pub link_resolution: MockLinkResolution,
     pub user: String,
     pub time: SystemTime,
     pub comment: Option<String>,
@@ -394,7 +436,9 @@ impl Default for MockBranchOptions {
     fn default() -> Self {
         Self {
             srcmd5: random_md5(),
-            xsrcmd5: random_md5(),
+            link_resolution: MockLinkResolution::Available {
+                xsrcmd5: random_md5(),
+            },
             time: SystemTime::now(),
             user: ADMIN_USER.to_owned(),
             comment: None,
