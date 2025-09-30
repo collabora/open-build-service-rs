@@ -6,3 +6,6 @@ members = [
   "open-build-service-api",
   "open-build-service-mock"
 ]
+
+[workspace.package]
+repository = "https://github.com/collabora/open-build-service-rs"
