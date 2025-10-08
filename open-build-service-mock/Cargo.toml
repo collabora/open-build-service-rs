@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Sjoerd Simons <sjoerd@collabora.com>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
+description = "Mock crate for the Open Build Service API"
+repository.workspace = true
+homepage.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,5 +19,5 @@ rand = "0.9.2"
 serde = "1.0.217"
 strum = "0.27"
 strum_macros = "0.23"
-wiremock = "0.6.2"
+wiremock = "0.6.5"
 base64ct = { version = "1.6.0", features = ["std"] }
