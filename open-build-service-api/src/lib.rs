@@ -1291,7 +1291,10 @@ impl Client {
             base: url,
             user,
             pass,
-            client: reqwest::Client::new(),
+            client: reqwest::ClientBuilder::new()
+                .user_agent(concat!("open-build-service-rs/", env!("CARGO_PKG_VERSION")))
+                .build()
+                .unwrap(),
         }
     }
 
