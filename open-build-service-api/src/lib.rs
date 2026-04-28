@@ -1302,7 +1302,7 @@ impl Client {
         &self.base
     }
 
-    pub fn project(&self, project: String) -> ProjectBuilder {
+    pub fn project(&self, project: String) -> ProjectBuilder<'_> {
         ProjectBuilder {
             client: self,
             project,

@@ -456,10 +456,11 @@ impl Respond for BuildJobHistoryResponder {
                         .write_empty()?;
                     entries_added += 1;
 
-                    if let Some(limit) = limit {
-                        if limit > 0 && entries_added >= limit {
-                            break;
-                        }
+                    if let Some(limit) = limit
+                        && limit > 0
+                        && entries_added >= limit
+                    {
+                        break;
                     }
                 }
 
