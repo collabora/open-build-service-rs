@@ -115,6 +115,7 @@ async fn main() -> Result<()> {
         } => (url, user, pass),
         _ => {
             let oscrc = Oscrc::from_path(&opts.config)
+                .await
                 .with_context(|| format!("Couldn't open {:?}", opts.config))?;
             let url = opts
                 .apiurl
@@ -123,7 +124,7 @@ async fn main() -> Result<()> {
                 // If user is set pass should be set as well
                 (user, opts.pass.unwrap())
             } else {
-                oscrc.credentials(&url)?
+                oscrc.credentials(&url).await?
             };
             (url, user, pass)
         }
