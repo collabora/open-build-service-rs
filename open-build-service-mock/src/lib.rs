@@ -857,7 +857,7 @@ impl ObsMock {
         project_name: &str,
         package_name: &str,
         file: MockSourceFile,
-    ) -> MockSourceFileKey {
+    ) -> MockSourceFileKey<'_, '_> {
         let mut projects = self.inner.projects.write().unwrap();
         let project = projects
             .get_mut(project_name)

@@ -4,21 +4,22 @@ version = "0.1.0"
 authors = ["Sjoerd Simons <sjoerd@collabora.com>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
+rust-version.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-reqwest = { version = "0.12.22", features = [ "stream" ] }
+reqwest = { version = "0.13.3", features = [ "stream" ] }
 url = "2.5.4"
-quick-xml = { version = "0.38", features = [ "serialize" ] }
+quick-xml = { version = "0.39", features = [ "serialize" ] }
 serde = { version = "1.0.217", features = [ "derive" ] }
 chrono = { version = "0.4", features = [ "serde" ] }
 thiserror = "2.0.12"
 futures = "0.3.14"
 bytes = "1.10"
-base16ct = { version = "0.2", features = ["std"] }
-md-5 = "0.10"
-strum_macros = "0.23"
+base16ct = { version = "1.0", features = ["alloc"] }
+md-5 = "0.11"
+strum_macros = "0.28"
 
 [dev-dependencies]
 open-build-service-mock = { path = "../open-build-service-mock" }
