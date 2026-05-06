@@ -10,3 +10,4 @@ members = [
 [workspace.package]
 repository = "https://github.com/collabora/open-build-service-rs"
 homepage = "https://github.com/collabora/open-build-service-rs"
+rust-version = "1.90"

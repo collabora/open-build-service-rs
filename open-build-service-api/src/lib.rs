@@ -1291,7 +1291,10 @@ impl Client {
             base: url,
             user,
             pass,
-            client: reqwest::Client::new(),
+            client: reqwest::ClientBuilder::new()
+                .user_agent(concat!("open-build-service-rs/", env!("CARGO_PKG_VERSION")))
+                .build()
+                .unwrap(),
         }
     }
 
@@ -1299,7 +1302,7 @@ impl Client {
         &self.base
     }
 
-    pub fn project(&self, project: String) -> ProjectBuilder {
+    pub fn project(&self, project: String) -> ProjectBuilder<'_> {
         ProjectBuilder {
             client: self,
             project,

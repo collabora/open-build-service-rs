@@ -15,20 +15,20 @@ jobs:
     name: cargo check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@master # avoid the tag here to prevent dependabot from updating it
         with:
-          toolchain: "1.88"
+          toolchain: "1.90"
       - run: cargo check --all-targets --all-features
 
   fmt:
     name: cargo fmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@master # avoid the tag here to prevent dependabot from updating it
         with:
-          toolchain: "1.88"
+          toolchain: "1.90"
           components: rustfmt
       - run: cargo fmt --all --check
 
@@ -36,22 +36,22 @@ jobs:
     name: cargo test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@master # avoid the tag here to prevent dependabot from updating it
         with:
-          toolchain: "1.88"
+          toolchain: "1.90"
       - run: cargo test --all-targets --all-features
 
   clippy:
     name: cargo clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@master # avoid the tag here to prevent dependabot from updating it
         with:
-          toolchain: "1.88"
+          toolchain: "1.90"
           components: clippy
-      - uses: clechasseur/rs-clippy-check@v4.0.5
+      - uses: clechasseur/rs-clippy-check@v6.0.3
         with:
           args: --all-targets --all-features -- -D warnings
 
@@ -60,11 +60,11 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: clechasseur/rs-clippy-check@v4.0.5
+      - uses: clechasseur/rs-clippy-check@v6.0.3
         with:
           args: --all-targets --all-features
 
@@ -72,7 +72,7 @@ jobs:
     name: minimal direct dependencies
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: clippy

@@ -2,7 +2,6 @@ use secret_service::EncryptionType;
 use secret_service::SecretService;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use thiserror::Error;
@@ -55,13 +54,22 @@ pub struct Oscrc {
 }
 
 impl Oscrc {
-    fn pass_from_secretservice(user: &str, service: &Url) -> Result<String, CredentialsError> {
-        let ss = SecretService::new(EncryptionType::Dh).unwrap();
+    async fn pass_from_secretservice(
+        user: &str,
+        service: &Url,
+    ) -> Result<String, CredentialsError> {
+        let ss = SecretService::connect(EncryptionType::Dh).await?;
         let service = service.domain().ok_or(CredentialsError::UnknownUrl)?;
 
-        let items = ss.search_items(vec![("username", user), ("service", service)])?;
-        let item = items.first().ok_or(CredentialsError::MissingSecretsPass)?;
-        let secret = item.get_secret()?;
+        let items = ss
+            .search_items(HashMap::from([("username", user), ("service", service)]))
+            .await?;
+        let item = items
+            .unlocked
+            .first()
+            .or_else(|| items.locked.first())
+            .ok_or(CredentialsError::MissingSecretsPass)?;
+        let secret = item.get_secret().await?;
         let pass = String::from_utf8(secret)?;
 
         Ok(pass)
@@ -71,16 +79,16 @@ impl Oscrc {
         serde_ini::from_read(reader).map_err(|e| e.into())
     }
 
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
-        let oscrc = File::open(path)?;
-        Self::from_reader(oscrc)
+    pub async fn from_path<P: AsRef<Path>>(path: P) -> Result<Self, Error> {
+        let data = tokio::fs::read(path).await?;
+        Self::from_reader(data.as_slice())
     }
 
     pub fn default_service(&self) -> &Url {
         &self.general.apiurl
     }
 
-    pub fn credentials(&self, service: &Url) -> Result<(String, String), CredentialsError> {
+    pub async fn credentials(&self, service: &Url) -> Result<(String, String), CredentialsError> {
         let s = self
             .services
             .get(service)
@@ -90,7 +98,7 @@ impl Oscrc {
             pass.clone()
         } else if let Some(credmgr) = &s.credentials_mgr_class {
             match credmgr.as_str() {
-                SECRET_SERVICE => Self::pass_from_secretservice(&user, service)?,
+                SECRET_SERVICE => Self::pass_from_secretservice(&user, service).await?,
                 _ => return Err(CredentialsError::UnknownCredMgr(credmgr.clone())),
             }
         } else {
