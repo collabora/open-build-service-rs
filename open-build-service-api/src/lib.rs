@@ -700,6 +700,9 @@ impl Stream for PackageLogStream<'_> {
                     match ready!(stream.as_mut().poll_next(cx)) {
                         Some(Err(e)) => return Poll::Ready(Some(Err(e.into()))),
                         Some(Ok(b)) => {
+                            if b.is_empty() {
+                                continue;
+                            }
                             me.offset += b.len();
                             *gotdata = true;
                             return Poll::Ready(Some(Ok(b)));
