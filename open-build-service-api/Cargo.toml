@@ -1,6 +1,6 @@
 [package]
 name = "open-build-service-api"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Sjoerd Simons <sjoerd@collabora.com>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
